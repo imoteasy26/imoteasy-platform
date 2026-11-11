@@ -9,7 +9,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const listing = await getListingBySlug(slug)
   if (!listing) return { title: 'Обявата не е намерена', robots: { index: false } }
-  return { title: listing.title, description: `${listing.title} — ${formatPrice(listing.price_eur)} в ${listing.city}. Разгледай подробностите в Imoteasy.` }
+  const description = `${listing.title} — ${formatPrice(listing.price_eur)} в ${listing.city}. Разгледай подробностите в Imoteasy.`
+  return {
+    title: listing.title,
+    description,
+    alternates: { canonical: `/imoti/${listing.slug}` },
+    openGraph: { title: listing.title, description, type: 'article' },
+  }
 }
 
 export default async function ListingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ contact?: string; report?: string }> }) {

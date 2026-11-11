@@ -18,4 +18,5 @@ export type ListingFilters = {
   sort?: 'newest' | 'price_asc' | 'price_desc'
 }
 
-export type ListingWithImages = Listing & { images: ListingImage[] }
+export type ListingImageWithUrl = ListingImage & { signed_url: string }
+export type ListingWithImages = Listing & { images: ListingImageWithUrl[] }

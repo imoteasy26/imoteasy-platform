@@ -9,13 +9,13 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { FavoriteButton } from '@/features/listings/favorite-button'
 import { formatArea, formatPrice, propertyTypeLabels, transactionLabels } from '@/lib/format'
-import { getPublicImageUrl } from '@/lib/listing-images'
 import type { ListingWithImages } from '@/lib/listing-types'
+import type { Tables } from '@/lib/supabase/database.types'
 import { createInquiry, reportListing } from '@/app/imoti/[slug]/actions'
 
-export function ListingDetail({ listing, signedIn, contactState, reportState }: { listing: ListingWithImages & { seller: { display_name: string; account_type: string; created_at: string } | null }; signedIn: boolean; contactState?: string; reportState?: string }) {
-  const images = listing.images
-  const displayImages = images.length ? images : []
+export function ListingDetail({ listing, signedIn, contactState, reportState }: { listing: ListingWithImages & { seller: { display_name: string; account_type: string; created_at: string } | null; priceHistory: Tables<'listing_price_history'>[]; priceHistoryAvailable: boolean }; signedIn: boolean; contactState?: string; reportState?: string }) {
+  const images = listing.images.filter((image) => Boolean(image.signed_url))
+  const displayImages = images
   const cover = displayImages.find((image) => image.is_cover) ?? displayImages[0]
   const detailRows = [
     ['Тип имот', propertyTypeLabels[listing.property_type]], ['Площ', formatArea(listing.area_sqm)],
@@ -30,10 +30,10 @@ export function ListingDetail({ listing, signedIn, contactState, reportState }: 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section>
           <div className="relative overflow-hidden rounded-[1.5rem] bg-subtle">
-            {cover ? <Image alt={cover.alt_text || listing.title} className="max-h-[560px] w-full object-cover" height={900} priority sizes="(max-width: 1024px) 100vw, 70vw" src={getPublicImageUrl(cover.storage_path)} width={1400} unoptimized /> : <div className="grid min-h-[300px] place-items-center text-sm text-muted-foreground">Към тази обява все още няма снимки.</div>}
+            {cover ? <Image alt={cover.alt_text || listing.title} className="max-h-[560px] w-full object-cover" height={900} priority sizes="(max-width: 1024px) 100vw, 70vw" src={cover.signed_url} width={1400} /> : <div className="grid min-h-[300px] place-items-center text-sm text-muted-foreground">Към тази обява все още няма снимки.</div>}
             <FavoriteButton className="absolute right-4 top-4" listingId={listing.id} />
           </div>
-          {displayImages.length > 1 ? <div aria-label="Снимки на имота" className="mt-3 grid grid-cols-4 gap-3">{displayImages.slice(1, 5).map((image) => <div className="relative aspect-[1.4] overflow-hidden rounded-xl bg-subtle" key={image.id}><Image alt={image.alt_text || listing.title} className="object-cover" fill sizes="25vw" src={getPublicImageUrl(image.storage_path)} unoptimized /></div>)}</div> : null}
+          {displayImages.length > 1 ? <div aria-label="Снимки на имота" className="mt-3 grid grid-cols-4 gap-3">{displayImages.slice(1, 5).map((image) => <div className="relative aspect-[1.4] overflow-hidden rounded-xl bg-subtle" key={image.id}><Image alt={image.alt_text || listing.title} className="object-cover" fill sizes="25vw" src={image.signed_url} /></div>)}</div> : null}
           <div className="mt-7 flex flex-wrap items-center gap-2"><Badge>{transactionLabels[listing.transaction_type]}</Badge><Badge variant="secondary">{propertyTypeLabels[listing.property_type]}</Badge></div>
           <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-[-0.04em] text-ink sm:text-4xl">{listing.title}</h1>
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><MapPin aria-hidden size={16} />{[listing.neighborhood, listing.city].filter(Boolean).join(', ')} <span aria-hidden>·</span> <span>Точният адрес се споделя лично.</span></p>
@@ -42,6 +42,10 @@ export function ListingDetail({ listing, signedIn, contactState, reportState }: 
             <h2 className="text-xl font-semibold tracking-tight text-ink" id="details-heading">Характеристики</h2>
             <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-3">{detailRows.map(([label, value]) => <div className="bg-white p-4" key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 font-semibold text-ink">{value}</dd></div>)}</dl>
           </section>
+          {listing.priceHistory.length || !listing.priceHistoryAvailable ? <section aria-labelledby="price-history-heading" className="mt-9">
+            <h2 className="text-xl font-semibold tracking-tight text-ink" id="price-history-heading">История на цената</h2>
+            {listing.priceHistory.length ? <ol className="mt-4 flex flex-col gap-3">{listing.priceHistory.map((entry) => <li className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white p-4" key={entry.id}><div><p className="font-semibold text-ink">{entry.previous_price === null ? `Начална цена: ${formatPrice(entry.new_price)}` : `${formatPrice(entry.previous_price)} → ${formatPrice(entry.new_price)}`}</p><time className="mt-1 block text-xs text-muted-foreground" dateTime={entry.changed_at}>{new Intl.DateTimeFormat('bg-BG', { dateStyle: 'medium' }).format(new Date(entry.changed_at))}</time></div>{entry.previous_price !== null ? <Badge variant={entry.new_price < entry.previous_price ? 'default' : 'secondary'}>{entry.new_price < entry.previous_price ? 'Намаление' : 'Промяна'}</Badge> : null}</li>)}</ol> : <p role="status" className="mt-3 rounded-xl bg-subtle p-4 text-sm text-muted-foreground">Историята ще се активира след актуализацията на базата данни.</p>}
+          </section> : null}
           {listing.latitude !== null && listing.longitude !== null ? <div className="mt-8 rounded-2xl border border-line bg-white p-5"><p className="flex items-center gap-2 font-semibold text-ink"><MapPin aria-hidden size={17} />Приблизителна локация</p><p className="mt-1 text-sm text-muted-foreground">Маркерът е ориентировъчен. Точният адрес не се показва на картата.</p><div className="mt-4 h-56 overflow-hidden rounded-xl bg-subtle"><iframe aria-label={`Карта за приблизителната локация в ${listing.city}`} className="h-full w-full border-0" loading="lazy" referrerPolicy="no-referrer-when-downgrade" src={`https://www.openstreetmap.org/export/embed.html?bbox=${listing.longitude - 0.01}%2C${listing.latitude - 0.01}%2C${listing.longitude + 0.01}%2C${listing.latitude + 0.01}&layer=mapnik&marker=${listing.latitude}%2C${listing.longitude}`} title={`Карта на ${listing.city}`} /></div></div> : null}
         </section>
 

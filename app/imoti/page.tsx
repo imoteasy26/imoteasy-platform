@@ -7,18 +7,20 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { ListingCard } from '@/features/listings/listing-card'
 import { MapToggle } from '@/features/listings/map-toggle'
+import { SaveSearchButton } from '@/features/listings/save-search-button'
 import { searchListings } from '@/lib/listings'
+import { hasSavedSearchCriteria } from '@/lib/saved-searches'
 import type { ListingFilters } from '@/lib/listing-types'
 
-export const metadata: Metadata = { title: 'Имоти за продажба и под наем', description: 'Търси имоти по град, цена, площ, тип и още критерии в Imoteasy.' }
+export const metadata: Metadata = { title: 'Имоти за продажба и под наем', description: 'Търси имоти по град, цена, площ, тип и още критерии в Imoteasy.', alternates: { canonical: '/imoti' } }
 type SearchParams = Record<string, string | string[] | undefined>
 
 function one(params: SearchParams, key: string) { const value = params[key]; return Array.isArray(value) ? value[0] : value }
-function numberParam(params: SearchParams, key: string) {
+function numberParam(params: SearchParams, key: string, min = 0, max = 1_000_000_000, integer = false) {
   const value = one(params, key)
   if (!value || value.length > 16) return undefined
   const number = Number(value)
-  return Number.isFinite(number) && number >= 0 && number <= 1_000_000_000 ? number : undefined
+  return Number.isFinite(number) && number >= min && number <= max && (!integer || Number.isInteger(number)) ? number : undefined
 }
 function pageHref(params: SearchParams, page: number) {
   const query = new URLSearchParams()
@@ -32,21 +34,23 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
   const propertyType = one(params, 'property_type')
   const transactionType = one(params, 'transaction_type')
   const sort = one(params, 'sort')
-  const page = Math.max(1, Number(one(params, 'page')) || 1)
+  const requestedPage = Number(one(params, 'page'))
+  const page = Number.isFinite(requestedPage) ? Math.min(100, Math.max(1, Math.floor(requestedPage))) : 1
   const filters: ListingFilters = {
     city: one(params, 'city')?.trim().slice(0, 100) || undefined,
     neighborhood: one(params, 'neighborhood')?.trim().slice(0, 100) || undefined,
     propertyType: ['apartment', 'house', 'land', 'office', 'shop', 'warehouse', 'other'].includes(propertyType ?? '') ? propertyType as ListingFilters['propertyType'] : undefined,
     transactionType: ['sale', 'rent'].includes(transactionType ?? '') ? transactionType as ListingFilters['transactionType'] : undefined,
     minPrice: numberParam(params, 'min_price'), maxPrice: numberParam(params, 'max_price'),
-    minArea: numberParam(params, 'min_area'), maxArea: numberParam(params, 'max_area'),
-    rooms: numberParam(params, 'rooms'), bedrooms: numberParam(params, 'bedrooms'), floor: numberParam(params, 'floor'),
+    minArea: numberParam(params, 'min_area', 0, 10_000_000), maxArea: numberParam(params, 'max_area', 0, 10_000_000),
+    rooms: numberParam(params, 'rooms', 0, 30, true), bedrooms: numberParam(params, 'bedrooms', 0, 30, true), floor: numberParam(params, 'floor', -5, 200, true),
     condition: one(params, 'condition')?.trim().slice(0, 80) || undefined,
     furnishing: one(params, 'furnishing')?.trim().slice(0, 80) || undefined,
     constructionType: one(params, 'construction_type')?.trim().slice(0, 80) || undefined,
     sort: ['price_asc', 'price_desc'].includes(sort ?? '') ? sort as ListingFilters['sort'] : 'newest',
   }
   const result = await searchListings(filters, page)
+  const mapListings = result.listings.map(({ id, slug, title, price_eur, latitude, longitude }) => ({ id, slug, title, price_eur, latitude, longitude }))
 
   return (
     <main className="site-container min-h-[70vh] py-10 sm:py-14" id="main-content">
@@ -71,8 +75,8 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
         </FieldGroup>
         <div className="mt-5 flex flex-wrap items-center gap-3"><Button className="rounded-xl" type="submit"><Search data-icon="inline-start" />Покажи резултати</Button><Link className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-subtle" href="/imoti"><SlidersHorizontal aria-hidden size={15} />Изчисти филтрите</Link></div>
       </form>
-      <div className="mb-4 flex items-center justify-between gap-4"><p className="text-sm text-muted-foreground">{result.error ? 'Не успяхме да заредим обявите.' : `${result.total} ${result.total === 1 ? 'обява' : 'обяви'}`}</p><span className="text-xs text-muted-foreground">Цените са в евро</span></div>
-      {result.error ? <div className="rounded-2xl bg-subtle p-6 text-sm text-ink">Възникна временен проблем при зареждането. Опитай отново.</div> : result.listings.length ? <MapToggle listings={result.listings} list={<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{result.listings.map((listing) => <ListingCard key={listing.id} listing={listing} />)}</div>} /> : <EmptyState description="Опитай да промениш критериите или се върни по-късно — нови обяви се добавят след преглед." title="Няма резултати за тези критерии" />}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{result.error ? 'Не успяхме да заредим обявите.' : `${result.total} ${result.total === 1 ? 'обява' : 'обяви'}`}</p><div className="flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">Цените са в евро</span><SaveSearchButton active={hasSavedSearchCriteria(filters)} filters={filters} returnTo={pageHref(params, page)} /></div></div>
+      {result.error ? <div className="rounded-2xl bg-subtle p-6 text-sm text-ink">Възникна временен проблем при зареждането. Опитай отново.</div> : result.listings.length ? <MapToggle listings={mapListings} list={<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{result.listings.map((listing) => <ListingCard key={listing.id} listing={listing} />)}</div>} /> : <EmptyState description="Опитай да промениш критериите или се върни по-късно — нови обяви се добавят след преглед." title="Няма резултати за тези критерии" />}
       {(page > 1 || result.hasNextPage) ? <nav aria-label="Страници с резултати" className="mt-8 flex justify-center gap-3">{page > 1 ? <Link className="btn-secondary" href={pageHref(params, page - 1)}>Назад</Link> : null}{result.hasNextPage ? <Link className="btn-primary" href={pageHref(params, page + 1)}>Още обяви</Link> : null}</nav> : null}
     </main>
   )
