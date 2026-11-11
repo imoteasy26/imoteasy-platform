@@ -4,6 +4,7 @@ type ListingStatus = 'draft' | 'pending_review' | 'published' | 'rejected' | 'ar
 type AccountType = 'individual' | 'broker' | 'agency' | 'admin'
 type PropertyType = 'apartment' | 'house' | 'land' | 'office' | 'shop' | 'warehouse' | 'other'
 type TransactionType = 'sale' | 'rent'
+type InquiryStatus = 'new' | 'read' | 'replied' | 'archived'
 
 type Table<Row, Insert, Update = Partial<Insert>> = {
   Row: Row
@@ -32,8 +33,12 @@ export type Database = {
         { user_id: string; listing_id: string; created_at?: string }
       >
       inquiries: Table<
-        { id: string; listing_id: string; sender_id: string; name: string; email: string; phone: string | null; message: string; created_at: string },
-        { id?: string; listing_id: string; sender_id: string; name: string; email: string; phone?: string | null; message: string; created_at?: string }
+        { id: string; listing_id: string; sender_id: string; name: string; email: string; phone: string | null; message: string; status: InquiryStatus; created_at: string },
+        { id?: string; listing_id: string; sender_id: string; name: string; email: string; phone?: string | null; message: string; status?: InquiryStatus; created_at?: string }
+      >
+      private_profile_details: Table<
+        { user_id: string; phone: string | null },
+        { user_id: string; phone?: string | null }
       >
       listing_reports: Table<
         { id: string; listing_id: string; reporter_id: string; reason: 'incorrect' | 'duplicate' | 'fraud' | 'inappropriate' | 'other'; details: string | null; status: 'new' | 'reviewed' | 'actioned'; created_at: string },
