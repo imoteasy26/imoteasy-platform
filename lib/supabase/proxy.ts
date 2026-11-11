@@ -9,6 +9,7 @@ export async function updateSession(request: NextRequest) {
 
   let response = NextResponse.next({ request })
   const supabase = createServerClient<Database>(url, key, {
+    cookieOptions: { secure: process.env.NODE_ENV === 'production' },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll(cookiesToSet) {

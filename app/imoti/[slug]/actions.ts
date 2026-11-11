@@ -25,6 +25,9 @@ export async function createInquiry(listingId: string, slug: string, formData: F
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(`/imoti/${safeSlug.data}`)}`)
+  const { data: listing } = await supabase.from('listings').select('id')
+    .eq('id', safeId.data).eq('slug', safeSlug.data).eq('status', 'published').maybeSingle()
+  if (!listing) redirect(`/imoti/${safeSlug.data}?contact=error`)
 
   const { error } = await supabase.from('inquiries').insert({
     listing_id: safeId.data,
@@ -48,6 +51,9 @@ export async function reportListing(listingId: string, slug: string, formData: F
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(`/imoti/${safeSlug.data}`)}`)
+  const { data: listing } = await supabase.from('listings').select('id')
+    .eq('id', safeId.data).eq('slug', safeSlug.data).eq('status', 'published').maybeSingle()
+  if (!listing) redirect(`/imoti/${safeSlug.data}?report=error`)
   const { error } = await supabase.from('listing_reports').insert({
     listing_id: safeId.data,
     reporter_id: user.id,
