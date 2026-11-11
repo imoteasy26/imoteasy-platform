@@ -44,9 +44,21 @@ export type Database = {
         { id: string; listing_id: string; reporter_id: string; reason: 'incorrect' | 'duplicate' | 'fraud' | 'inappropriate' | 'other'; details: string | null; status: 'new' | 'reviewed' | 'actioned'; created_at: string },
         { id?: string; listing_id: string; reporter_id: string; reason: 'incorrect' | 'duplicate' | 'fraud' | 'inappropriate' | 'other'; details?: string | null; status?: 'new' | 'reviewed' | 'actioned'; created_at?: string }
       >
+      saved_searches: Table<
+        { id: string; user_id: string; name: string; filters: Json; filter_hash: string; enabled: boolean; created_at: string; updated_at: string },
+        { id?: string; user_id: string; name: string; filters: Json; filter_hash: string; enabled?: boolean; created_at?: string; updated_at?: string }
+      >
+      notifications: Table<
+        { id: string; user_id: string; listing_id: string | null; type: 'saved_search_match' | 'price_drop' | 'inquiry_received'; title: string; body: string; href: string; dedupe_key: string; is_read: boolean; created_at: string },
+        { id?: string; user_id: string; listing_id?: string | null; type: 'saved_search_match' | 'price_drop' | 'inquiry_received'; title: string; body: string; href: string; dedupe_key: string; is_read?: boolean; created_at?: string }
+      >
+      listing_price_history: Table<
+        { id: string; listing_id: string; previous_price: number | null; new_price: number; changed_at: string },
+        { id?: string; listing_id: string; previous_price?: number | null; new_price: number; changed_at?: string }
+      >
       private_listing_details: Table<
-        { listing_id: string; exact_address: string; created_at: string; updated_at: string },
-        { listing_id: string; exact_address: string; created_at?: string; updated_at?: string }
+        { listing_id: string; exact_address: string; exact_latitude: number | null; exact_longitude: number | null; created_at: string; updated_at: string },
+        { listing_id: string; exact_address: string; exact_latitude?: number | null; exact_longitude?: number | null; created_at?: string; updated_at?: string }
       >
     }
     Views: { [_ in never]: never }

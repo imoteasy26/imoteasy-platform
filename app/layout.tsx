@@ -2,9 +2,12 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
+import { getSiteUrl } from '@/lib/site-url'
 import './globals.css'
 
 export const metadata: Metadata = {
+  metadataBase: getSiteUrl(),
+  alternates: { canonical: '/' },
   title: {
     default: 'Imoteasy — намери своя дом',
     template: '%s | Imoteasy',

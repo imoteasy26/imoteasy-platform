@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { listingSchema } from '@/features/listings/listing-schema'
+import { approximateCoordinate } from '@/lib/geo'
+import { withSignedImageUrls } from '@/lib/listing-images'
 import { createClient } from '@/lib/supabase/server'
 
 const listingIdSchema = z.string().uuid()
@@ -32,8 +34,8 @@ function toListingRecord(values: z.infer<typeof listingSchema>) {
     construction_type: values.construction_type?.trim() || null,
     condition: values.condition?.trim() || null,
     furnishing: values.furnishing?.trim() || null,
-    latitude: values.latitude ?? null,
-    longitude: values.longitude ?? null,
+    latitude: approximateCoordinate(values.latitude, 90),
+    longitude: approximateCoordinate(values.longitude, 180),
   }
 }
 
@@ -52,6 +54,16 @@ export async function saveListingDraft(existingId: string | null, input: unknown
   if (!user) return { success: false as const, message: 'Влез в профила си, за да запазиш обява.' }
 
   const values = parsed.data
+  const hasExactCoordinates = values.latitude !== undefined || values.longitude !== undefined
+  const { error: coordinateSchemaError } = await supabase
+    .from('private_listing_details')
+    .select('exact_latitude, exact_longitude')
+    .limit(0)
+  const privateCoordinatesReady = !coordinateSchemaError
+  if (hasExactCoordinates && !privateCoordinatesReady) {
+    return { success: false as const, message: 'Прилагането на актуализацията за защита на локацията е необходимо, преди да запазиш точни координати.' }
+  }
+
   const listingValues = toListingRecord(values)
   let listingId: string
   let slug: string
@@ -82,6 +94,10 @@ export async function saveListingDraft(existingId: string | null, input: unknown
   const { error: addressError } = await supabase.from('private_listing_details').upsert({
     listing_id: listingId,
     exact_address: values.exact_address?.trim() || '',
+    ...(privateCoordinatesReady ? {
+      exact_latitude: values.latitude ?? null,
+      exact_longitude: values.longitude ?? null,
+    } : {}),
   }, { onConflict: 'listing_id' })
 
   if (addressError) return { success: false as const, message: 'Данните за имота са запазени, но личният адрес не се обнови.' }
@@ -141,7 +157,7 @@ export async function registerListingImages(listingId: string, input: unknown) {
 
   revalidatePath('/dashboard')
   revalidatePath(`/imoti/${listing.slug}`)
-  return { success: true as const, images: savedImages }
+  return { success: true as const, images: await withSignedImageUrls(supabase, savedImages) }
 }
 
 export async function submitListingForReview(listingId: string) {
@@ -187,7 +203,7 @@ export async function deleteListingImage(listingId: string, imageId: string) {
   }
 
   const { error: storageError } = await supabase.storage.from('imoteasy-listings').remove([image.storage_path])
-  if (storageError) return { success: false as const, message: 'Не успяхме да изтрие снимката от хранилището.' }
+  if (storageError) return { success: false as const, message: 'Не успяхме да изтрием снимката от хранилището.' }
   const { error: rowError } = await supabase.from('listing_images').delete()
     .eq('id', image.id).eq('listing_id', listing.id)
   if (rowError) return { success: false as const, message: 'Снимката е премахната от хранилището, но метаданните не се обновиха.' }

@@ -12,17 +12,21 @@ import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 
 const authSchema = z.object({
-  displayName: z.string().max(100).optional(),
+  displayName: z.string().trim().max(100).optional(),
   email: z.string().trim().email('Въведи валиден имейл адрес.').max(254),
   password: z.string().min(8, 'Паролата трябва да е поне 8 символа.').max(72),
 })
+
 type AuthValues = z.infer<typeof authSchema>
 
 export function AuthForm({ mode, next = '/dashboard' }: { mode: 'sign-in' | 'sign-up'; next?: string }) {
   const [message, setMessage] = useState('')
   const router = useRouter()
+  const validationSchema = mode === 'sign-up'
+    ? authSchema.extend({ displayName: z.string().trim().min(2, 'Въведи името си.').max(100) })
+    : authSchema
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<AuthValues>({
-    resolver: zodResolver(authSchema),
+    resolver: zodResolver(validationSchema),
     defaultValues: { displayName: '', email: '', password: '' },
   })
   const destination = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'
@@ -68,6 +72,7 @@ export function AuthForm({ mode, next = '/dashboard' }: { mode: 'sign-in' | 'sig
         {mode === 'sign-up' ? <Field data-invalid={Boolean(errors.displayName)}><FieldLabel htmlFor="displayName">Име</FieldLabel><Input autoComplete="name" id="displayName" placeholder="Например, Мария Иванова" {...register('displayName', { required: 'Въведи името си.' })} aria-invalid={Boolean(errors.displayName)} />{errors.displayName ? <FieldError>{errors.displayName.message}</FieldError> : null}</Field> : null}
         <Field data-invalid={Boolean(errors.email)}><FieldLabel htmlFor="email">Имейл</FieldLabel><Input autoComplete="email" id="email" placeholder="name@example.com" type="email" {...register('email')} aria-invalid={Boolean(errors.email)} />{errors.email ? <FieldError>{errors.email.message}</FieldError> : <FieldDescription>Използвай имейл, до който имаш достъп.</FieldDescription>}</Field>
         <Field data-invalid={Boolean(errors.password)}><FieldLabel htmlFor="password">Парола</FieldLabel><Input autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'} id="password" placeholder="Минимум 8 символа" type="password" {...register('password')} aria-invalid={Boolean(errors.password)} />{errors.password ? <FieldError>{errors.password.message}</FieldError> : null}</Field>
+        {mode === 'sign-in' ? <Link className="self-end text-sm font-semibold text-brand hover:underline" href="/auth/forgot-password">Забравена парола?</Link> : null}
       </FieldGroup>
       {message ? <p aria-live="polite" className="rounded-xl bg-subtle px-4 py-3 text-sm leading-6 text-ink">{message}</p> : null}
       <Button className="min-h-12 w-full rounded-xl" disabled={isSubmitting} type="submit">{isSubmitting ? 'Момент…' : mode === 'sign-up' ? 'Създай профил' : 'Влез в профила'}</Button>

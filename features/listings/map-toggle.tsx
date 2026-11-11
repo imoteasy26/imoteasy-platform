@@ -4,14 +4,16 @@ import dynamic from 'next/dynamic'
 import { useState } from 'react'
 import { List, Map } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { ListingWithImages } from '@/lib/listing-types'
+import type { Listing } from '@/lib/supabase/database.types'
+
+type MapListingInput = Pick<Listing, 'id' | 'slug' | 'title' | 'price_eur' | 'latitude' | 'longitude'>
 
 const MapCanvas = dynamic(() => import('./map-canvas').then((module) => module.MapCanvas), {
   ssr: false,
   loading: () => <div aria-label="Картата се зарежда" className="grid h-[420px] place-items-center rounded-2xl bg-subtle text-sm text-muted-foreground">Зареждаме картата…</div>,
 })
 
-export function MapToggle({ listings, list }: { listings: ListingWithImages[]; list: React.ReactNode }) {
+export function MapToggle({ listings, list }: { listings: MapListingInput[]; list: React.ReactNode }) {
   const [showMap, setShowMap] = useState(false)
   const mappable = listings.filter((listing) => listing.latitude !== null && listing.longitude !== null)
   const mapListings = mappable.map((listing) => ({ id: listing.id, slug: listing.slug, title: listing.title, price: new Intl.NumberFormat('bg-BG', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(listing.price_eur), latitude: listing.latitude as number, longitude: listing.longitude as number }))

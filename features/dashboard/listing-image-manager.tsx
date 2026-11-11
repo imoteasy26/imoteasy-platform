@@ -6,7 +6,6 @@ import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { createClient } from '@/lib/supabase/client'
-import { getPublicImageUrl } from '@/lib/listing-images'
 import { deleteListingImage, registerListingImages } from '@/app/publish/actions'
 
 type EditableImage = {
@@ -15,6 +14,7 @@ type EditableImage = {
   alt_text: string
   position: number
   is_cover: boolean
+  signed_url: string
 }
 
 const maximumImages = 8
@@ -96,7 +96,7 @@ export function ListingImageManager({ listingId, ownerId, initialImages }: { lis
         <input accept="image/jpeg,image/png,image/webp" className="form-control file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-2 file:font-semibold file:text-brand" disabled={isPending || images.length >= maximumImages} id="listing-image-upload" multiple onChange={(event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; void uploadFiles(files) }} type="file" />
         <FieldDescription>{images.length} от {maximumImages} снимки · JPG, PNG или WebP до 8 MB всяка.</FieldDescription>
       </Field>
-      {images.length ? <ul aria-label="Качени снимки" className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{images.map((image, index) => <li className="overflow-hidden rounded-xl border border-line" key={image.id}><div className="relative aspect-[1.35] bg-subtle"><Image alt={image.alt_text || `Снимка ${index + 1}`} className="object-cover" fill sizes="(max-width: 640px) 50vw, 33vw" src={getPublicImageUrl(image.storage_path)} unoptimized /><span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold text-ink">{image.is_cover ? 'Основна снимка' : `Снимка ${index + 1}`}</span></div><div className="flex items-center justify-between gap-2 p-2"><span className="truncate text-xs text-muted-foreground">{image.alt_text}</span><Button aria-label={`Изтрий снимка ${index + 1}`} disabled={isPending} onClick={() => removeImage(image)} size="sm" type="button" variant="outline"><Trash2 data-icon="inline-start" />Изтрий</Button></div></li>)}</ul> : <p className="mt-5 rounded-xl border border-dashed border-line p-5 text-sm text-muted-foreground">Все още няма качени снимки.</p>}
+      {images.length ? <ul aria-label="Качени снимки" className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{images.map((image, index) => <li className="overflow-hidden rounded-xl border border-line" key={image.id}><div className="relative aspect-[1.35] bg-subtle">{image.signed_url ? <Image alt={image.alt_text || `Снимка ${index + 1}`} className="object-cover" fill sizes="(max-width: 640px) 50vw, 33vw" src={image.signed_url} /> : <div aria-label="Снимката временно не е достъпна" className="grid size-full place-items-center text-xs text-muted-foreground" role="img">Снимката временно не е достъпна</div>}<span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold text-ink">{image.is_cover ? 'Основна снимка' : `Снимка ${index + 1}`}</span></div><div className="flex items-center justify-between gap-2 p-2"><span className="truncate text-xs text-muted-foreground">{image.alt_text}</span><Button aria-label={`Изтрий снимка ${index + 1}`} disabled={isPending} onClick={() => removeImage(image)} size="sm" type="button" variant="outline"><Trash2 data-icon="inline-start" />Изтрий</Button></div></li>)}</ul> : <p className="mt-5 rounded-xl border border-dashed border-line p-5 text-sm text-muted-foreground">Все още няма качени снимки.</p>}
       {message ? <p aria-live="polite" className={`mt-4 text-sm ${message.includes('Не успяхме') || message.includes('изтече') || message.includes('най-много') || message.includes('Използвай') ? 'text-destructive' : 'text-brand'}`}>{message}</p> : null}
     </section>
   )

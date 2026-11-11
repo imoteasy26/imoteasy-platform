@@ -7,13 +7,14 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { LocationPicker } from '@/features/listings/location-picker'
 import { propertyTypeLabels, transactionLabels } from '@/lib/format'
-import type { Listing, ListingImage } from '@/lib/supabase/database.types'
+import type { Listing } from '@/lib/supabase/database.types'
+import type { ListingImageWithUrl } from '@/lib/listing-types'
 import { updateOwnedListingDetails } from '@/app/dashboard/actions'
 import { ListingImageManager } from './listing-image-manager'
 
-export function ListingEditor({ listing, exactAddress, images }: { listing: Listing; exactAddress: string; images: ListingImage[] }) {
-  const [latitude, setLatitude] = useState<number | null>(listing.latitude)
-  const [longitude, setLongitude] = useState<number | null>(listing.longitude)
+export function ListingEditor({ listing, exactAddress, exactLatitude, exactLongitude, coordinateSchemaReady, images }: { listing: Listing; exactAddress: string; exactLatitude: number | null; exactLongitude: number | null; coordinateSchemaReady: boolean; images: ListingImageWithUrl[] }) {
+  const [latitude, setLatitude] = useState<number | null>(exactLatitude)
+  const [longitude, setLongitude] = useState<number | null>(exactLongitude)
   const point = latitude !== null && longitude !== null ? [latitude, longitude] as [number, number] : null
 
   return (
@@ -37,7 +38,7 @@ export function ListingEditor({ listing, exactAddress, images }: { listing: List
           <Field><FieldLabel htmlFor="condition">Състояние</FieldLabel><Input defaultValue={listing.condition ?? ''} id="condition" maxLength={80} name="condition" /></Field>
           <Field><FieldLabel htmlFor="furnishing">Обзавеждане</FieldLabel><Input defaultValue={listing.furnishing ?? ''} id="furnishing" maxLength={80} name="furnishing" /></Field>
           <Field><FieldLabel htmlFor="exact_address">Точен адрес <span className="font-normal text-muted-foreground">(личен)</span></FieldLabel><Input autoComplete="street-address" defaultValue={exactAddress} id="exact_address" maxLength={500} name="exact_address" /><FieldDescription>Този адрес не се показва на публичната обява.</FieldDescription></Field>
-          <div className="md:col-span-2"><LocationPicker onPick={([nextLatitude, nextLongitude]) => { const validPoint = Number.isFinite(nextLatitude) && Number.isFinite(nextLongitude); setLatitude(validPoint ? nextLatitude : null); setLongitude(validPoint ? nextLongitude : null) }} point={point} /><input name="latitude" type="hidden" value={latitude ?? ''} /><input name="longitude" type="hidden" value={longitude ?? ''} /></div>
+          {coordinateSchemaReady ? <div className="md:col-span-2"><LocationPicker onPick={([nextLatitude, nextLongitude]) => { const validPoint = Number.isFinite(nextLatitude) && Number.isFinite(nextLongitude); setLatitude(validPoint ? nextLatitude : null); setLongitude(validPoint ? nextLongitude : null) }} point={point} /><input name="latitude" type="hidden" value={latitude ?? ''} /><input name="longitude" type="hidden" value={longitude ?? ''} /></div> : null}
         </FieldGroup>
         <Button className="mt-6" type="submit">Запази промените</Button>
       </form>
