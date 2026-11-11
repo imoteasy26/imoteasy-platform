@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 import { useState } from 'react'
 import { List, Map } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { ListingWithImages } from '@/lib/listings'
+import type { ListingWithImages } from '@/lib/listing-types'
 
 const MapCanvas = dynamic(() => import('./map-canvas').then((module) => module.MapCanvas), {
   ssr: false,

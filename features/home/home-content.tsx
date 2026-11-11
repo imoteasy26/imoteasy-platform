@@ -2,7 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight, BadgeCheck, Compass, ShieldCheck, Sparkles } from 'lucide-react'
 import { EmptyState } from '@/components/empty-state'
-import type { ListingWithImages } from '@/lib/listings'
+import type { ListingWithImages } from '@/lib/listing-types'
 import { ListingCard } from '@/features/listings/listing-card'
 import { HomeSearch } from './home-search'
 

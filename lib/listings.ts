@@ -1,31 +1,7 @@
+import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import type { Listing, ListingImage } from '@/lib/supabase/database.types'
-
-export type ListingFilters = {
-  city?: string
-  neighborhood?: string
-  propertyType?: Listing['property_type']
-  transactionType?: Listing['transaction_type']
-  minPrice?: number
-  maxPrice?: number
-  minArea?: number
-  maxArea?: number
-  rooms?: number
-  bedrooms?: number
-  floor?: number
-  condition?: string
-  furnishing?: string
-  constructionType?: string
-  sort?: 'newest' | 'price_asc' | 'price_desc'
-}
-
-export type ListingWithImages = Listing & { images: ListingImage[] }
-
-export function getPublicImageUrl(path: string) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  if (!url) return ''
-  return `${url}/storage/v1/object/public/imoteasy-listings/${path.split('/').map(encodeURIComponent).join('/')}`
-}
+import type { ListingFilters, ListingWithImages } from '@/lib/listing-types'
 
 async function attachImages(listings: Listing[]) {
   if (listings.length === 0) return [] as ListingWithImages[]

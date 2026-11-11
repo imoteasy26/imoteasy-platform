@@ -6,7 +6,7 @@ import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { createClient } from '@/lib/supabase/client'
-import { getPublicImageUrl } from '@/lib/listings'
+import { getPublicImageUrl } from '@/lib/listing-images'
 import { deleteListingImage, registerListingImages } from '@/app/publish/actions'
 
 type EditableImage = {
