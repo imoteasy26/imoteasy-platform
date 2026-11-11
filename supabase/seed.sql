@@ -1,0 +1,1 @@
+-- Intentionally no sample listings: public property data must come from real users.
