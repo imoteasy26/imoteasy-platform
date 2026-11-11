@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { FavoriteButton } from '@/features/listings/favorite-button'
 import { formatArea, formatPrice, propertyTypeLabels, transactionLabels } from '@/lib/format'
-import { getPublicImageUrl, type ListingWithImages } from '@/lib/listings'
+import { getPublicImageUrl } from '@/lib/listing-images'
+import type { ListingWithImages } from '@/lib/listing-types'
 import { createInquiry, reportListing } from '@/app/imoti/[slug]/actions'
 
 export function ListingDetail({ listing, signedIn, contactState, reportState }: { listing: ListingWithImages & { seller: { display_name: string; account_type: string; created_at: string } | null }; signedIn: boolean; contactState?: string; reportState?: string }) {

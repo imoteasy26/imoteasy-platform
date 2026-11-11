@@ -4,7 +4,8 @@ import { BedDouble, MapPin, Ruler, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatArea, formatPrice, propertyTypeLabels, transactionLabels } from '@/lib/format'
-import { getPublicImageUrl, type ListingWithImages } from '@/lib/listings'
+import { getPublicImageUrl } from '@/lib/listing-images'
+import type { ListingWithImages } from '@/lib/listing-types'
 import { FavoriteButton } from './favorite-button'
 
 export function ListingCard({ listing, initiallySaved = false }: { listing: ListingWithImages; initiallySaved?: boolean }) {

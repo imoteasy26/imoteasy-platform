@@ -7,7 +7,8 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { ListingCard } from '@/features/listings/listing-card'
 import { MapToggle } from '@/features/listings/map-toggle'
-import { searchListings, type ListingFilters } from '@/lib/listings'
+import { searchListings } from '@/lib/listings'
+import type { ListingFilters } from '@/lib/listing-types'
 
 export const metadata: Metadata = { title: 'Имоти за продажба и под наем', description: 'Търси имоти по град, цена, площ, тип и още критерии в Imoteasy.' }
 type SearchParams = Record<string, string | string[] | undefined>
