@@ -8,7 +8,6 @@ import { BrokerErrorNotice, BrokerMigrationNotice, BrokerStateNotice } from '@/f
 import { convertInquiryToCrmLead, updateCrmLead } from '@/app/broker/actions'
 import { getBrokerAccess, isBrokerSchemaMissing } from '@/lib/broker-workspace'
 import { createClient } from '@/lib/supabase/server'
-import type { Tables } from '@/lib/supabase/database.types'
 
 export const metadata: Metadata = { title: 'CRM и лийдове' }
 

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { PasswordRecoveryForm } from '@/features/auth/password-recovery-form'
 
 export const metadata: Metadata = { title: 'Забравена парола', robots: { index: false, follow: false } }

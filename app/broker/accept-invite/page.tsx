@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { BrokerMigrationNotice } from '@/features/broker/broker-state'
 import { acceptOrganizationInvite } from '@/app/broker/actions'
