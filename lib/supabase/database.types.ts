@@ -102,6 +102,8 @@ export type Database = {
       create_broker_workspace: { Args: { p_name: string; p_service_area: string | null; p_terms_version: string; p_terms_accepted: boolean }; Returns: string }
       create_organization_invitation: { Args: { p_organization_id: string; p_email: string; p_role: string; p_token_hash: string }; Returns: string }
       accept_organization_invitation: { Args: { p_token_hash: string }; Returns: string }
+      leave_organization: { Args: { p_organization_id: string }; Returns: undefined }
+      remove_organization_member: { Args: { p_organization_id: string; p_user_id: string }; Returns: undefined }
       convert_inquiry_to_crm_lead: { Args: { p_organization_id: string; p_inquiry_id: string; p_assigned_to?: string | null }; Returns: string }
       set_crm_lead_state: { Args: { p_lead_id: string; p_status: string; p_priority: string; p_assigned_to: string | null; p_next_follow_up_at: string | null }; Returns: undefined }
       transition_broker_transaction: { Args: { p_transaction_id: string; p_status: string }; Returns: undefined }

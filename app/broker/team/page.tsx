@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { BrokerErrorNotice, BrokerMigrationNotice, BrokerStateNotice } from '@/features/broker/broker-state'
 import { OrganizationInviteForm } from '@/features/broker/organization-invite-form'
+import { leaveOrganization, removeOrganizationMember } from '@/app/broker/actions'
 import { getBrokerAccess, isBrokerSchemaMissing } from '@/lib/broker-workspace'
 import { createClient } from '@/lib/supabase/server'
 
@@ -36,14 +38,44 @@ export default async function BrokerTeamPage({ searchParams }: { searchParams: P
   if (isBrokerSchemaMissing(profilesError)) return <main className="site-container py-10" id="main-content"><BrokerMigrationNotice /></main>
   const nameById = new Map((profiles ?? []).map((profile) => [profile.id, profile.display_name]))
   const canInvite = ['owner', 'agency_admin'].includes(membership.role)
+  const canManageMembers = canInvite
 
   return (
     <main className="site-container min-h-[72vh] py-8 sm:py-12" id="main-content">
       <div><p className="eyebrow">{organization.name} · Екип</p><h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-ink">Хора и достъп</h1><p className="mt-2 text-sm text-muted-foreground">Ролите са зададени от организацията и не могат да бъдат променяни от самия поканен.</p></div>
       <div className="mt-5"><BrokerStateNotice state={query.state} /></div>
-      <section aria-labelledby="members-heading" className="mt-8"><h2 className="text-xl font-semibold text-ink" id="members-heading">Активни членове</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{(members ?? []).map((member) => <article className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-white p-4" key={member.user_id}><div><h3 className="font-semibold text-ink">{nameById.get(member.user_id) || 'Член на екипа'}</h3><p className="mt-1 text-xs text-muted-foreground">Присъединил се {new Intl.DateTimeFormat('bg-BG', { dateStyle: 'medium' }).format(new Date(member.joined_at))}</p></div><Badge variant={member.role === 'owner' || member.role === 'agency_admin' ? 'default' : 'secondary'}>{roleLabels[member.role]}</Badge></article>)}</div>{members?.length ? null : <p className="mt-4 rounded-xl border border-dashed border-line p-5 text-sm text-muted-foreground">Все още няма активни членове.</p>}</section>
+      <section aria-labelledby="members-heading" className="mt-8"><h2 className="text-xl font-semibold text-ink" id="members-heading">Активни членове</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{(members ?? []).map((member) => {
+            const isSelf = member.user_id === membership.user_id
+            const canRemove = canManageMembers && !isSelf && !(membership.role === 'agency_admin' && member.role === 'owner')
+            return (
+              <article className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-white p-4" key={member.user_id}>
+                <div>
+                  <h3 className="font-semibold text-ink">{nameById.get(member.user_id) || 'Член на екипа'}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Присъединил се {new Intl.DateTimeFormat('bg-BG', { dateStyle: 'medium' }).format(new Date(member.joined_at))}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant={member.role === 'owner' || member.role === 'agency_admin' ? 'default' : 'secondary'}>{roleLabels[member.role]}</Badge>
+                  {canRemove ? (
+                    <form action={removeOrganizationMember}>
+                      <input name="organization_id" type="hidden" value={organization.id} />
+                      <input name="user_id" type="hidden" value={member.user_id} />
+                      <Button size="sm" type="submit" variant="outline">Премахни</Button>
+                    </form>
+                  ) : null}
+                </div>
+              </article>
+            )
+          })}</div>{members?.length ? null : <p className="mt-4 rounded-xl border border-dashed border-line p-5 text-sm text-muted-foreground">Все още няма активни членове.</p>}</section>
       {canInvite ? <section aria-labelledby="invite-heading" className="mt-10"><h2 className="text-xl font-semibold text-ink" id="invite-heading">Покани член</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Системата създава защитен, еднократен линк с валидност 7 дни. Сподели го директно с човека; имейл не се изпраща автоматично.</p><div className="mt-4 max-w-2xl"><OrganizationInviteForm organizationId={organization.id} /></div></section> : null}
       {canInvite && invitations?.length ? <section aria-labelledby="pending-invites-heading" className="mt-10"><h2 className="text-xl font-semibold text-ink" id="pending-invites-heading">Чакащи покани</h2><div className="mt-4 flex flex-col gap-2">{invitations.map((invitation) => <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white p-4" key={invitation.id}><span className="text-sm font-medium text-ink">{invitation.invitee_email}</span><div className="flex items-center gap-2"><Badge variant="secondary">{roleLabels[invitation.invited_role]}</Badge><span className="text-xs text-muted-foreground">Изтича {new Intl.DateTimeFormat('bg-BG', { dateStyle: 'medium' }).format(new Date(invitation.expires_at))}</span></div></div>)}</div></section> : null}
+      <section aria-labelledby="leave-heading" className="mt-10">
+        <h2 className="text-xl font-semibold text-ink" id="leave-heading">Напускане</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Можеш да напуснеш екипа по всяко време. Последният собственик трябва първо да предаде ролята на друг член.</p>
+        <form action={leaveOrganization} className="mt-4">
+          <input name="organization_id" type="hidden" value={organization.id} />
+          <Button type="submit" variant="outline">Напусни екипа</Button>
+        </form>
+      </section>
     </main>
   )
 }

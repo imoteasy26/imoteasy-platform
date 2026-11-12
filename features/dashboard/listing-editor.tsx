@@ -42,7 +42,7 @@ export function ListingEditor({ listing, exactAddress, exactLatitude, exactLongi
         </FieldGroup>
         <Button className="mt-6" type="submit">Запази промените</Button>
       </form>
-      <ListingImageManager initialImages={images} listingId={listing.id} ownerId={listing.owner_id} />
+      <ListingImageManager initialImages={images} listingId={listing.id} listingStatus={listing.status} ownerId={listing.owner_id} />
     </div>
   )
 }

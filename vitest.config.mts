@@ -7,6 +7,6 @@ export default defineConfig({
   resolve: { alias: { '@': projectRoot } },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'lib/**/*.test.ts'],
   },
 })
