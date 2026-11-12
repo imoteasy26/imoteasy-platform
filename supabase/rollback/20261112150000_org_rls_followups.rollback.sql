@@ -1,0 +1,15 @@
+-- ROLLBACK for 20261112150000_org_rls_followups.sql.
+-- Apply BEFORE 20261112140000_fix_invitation_inviter_role_null.rollback.sql.
+-- Manual, reviewed use only (never part of the migration chain).
+--
+-- This rollback is a no-op. It deliberately does not restore:
+--   * `assigned_to <> actor_id` in public.set_crm_lead_state
+--     (NULL <> uuid is UNKNOWN, which reopens the unassigned-lead claim hole)
+--   * a create_organization_invitation body without the NULL-safe
+--     `inviter_role is null or ...` check
+--   * the dead profiles-exists branch, or actor rows unlocked with FOR SHARE
+--
+-- The function bodies from 20261112150000 stay in place. Re-applying that
+-- migration after this rollback is a no-op. The pre-fix source remains in
+-- earlier migration files for history only and must not be reinstalled by
+-- a rollback.

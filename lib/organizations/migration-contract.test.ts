@@ -27,8 +27,11 @@ const rollback = read('supabase/rollback/20261112130000_organization_rls_hardeni
 const invitationFixRollback = read(
   'supabase/rollback/20261112140000_fix_invitation_inviter_role_null.rollback.sql',
 )
+const followups = stripSqlComments(read('supabase/migrations/20261112150000_org_rls_followups.sql'))
+const followupsRollback = read('supabase/rollback/20261112150000_org_rls_followups.rollback.sql')
 const isolationTest = read('supabase/tests/rls/organizations_isolation.sql')
 const concurrentLeave = read('supabase/tests/rls/organizations_concurrent_leave.sh')
+const concurrentMutualRemove = read('supabase/tests/rls/organizations_concurrent_mutual_remove.sh')
 const databaseTypes = read('lib/supabase/database.types.ts')
 
 const roleListSql = ORGANIZATION_ROLES.map((role) => `'${role}'`).join(', ')
@@ -115,8 +118,10 @@ describe('rollback and behavioral tests', () => {
     expect(rollback).toContain('listing_images_alt_text_length')
     expect(rollback).not.toMatch(/drop table if exists public\.organizations/i)
     expect(rollback).not.toMatch(/drop table if exists public\.organization_memberships/i)
-    expect(invitationFixRollback).toContain('create or replace function public.create_organization_invitation')
-    expect(invitationFixRollback).toContain("if inviter_role not in ('owner', 'agency_admin')")
+    expect(invitationFixRollback).not.toMatch(/create or replace function/i)
+    expect(invitationFixRollback).not.toMatch(/^\s*if inviter_role not in /m)
+    expect(invitationFixRollback.toLowerCase()).toContain('no-op')
+    expect(invitationFixRollback).toMatch(/NULL-safe/i)
   })
 
   it('ships a SQL isolation test that rolls back its fixtures', () => {
@@ -134,5 +139,38 @@ describe('rollback and behavioral tests', () => {
     expect(isolationTest).toContain('last owner was demoted via UPDATE')
     expect(isolationTest).toContain('outsider created an agency_admin invitation for a foreign org')
     expect(isolationTest).toContain('outsider accepted a missing agency_admin invitation')
+    expect(isolationTest).toContain('assistant took an unassigned lead')
+    expect(isolationTest).toContain('broker took an unassigned lead')
+    expect(isolationTest).toContain('owner could not assign an unassigned lead')
+    expect(isolationTest).toContain('assistant could not update an assigned lead')
+    expect(isolationTest).toContain('null lead status was accepted')
+    expect(isolationTest).toContain('null lead priority was accepted')
+  })
+})
+
+describe('org RLS follow-up migration', () => {
+  it('fixes unassigned-lead assignment with is distinct from and does not edit P1', () => {
+    expect(followups).toContain('lead_row.assigned_to is distinct from actor_id')
+    expect(followups).not.toContain('lead_row.assigned_to <> actor_id')
+    expect(foundation).toContain('lead_row.assigned_to <> actor_id')
+    expect(followupsRollback.toLowerCase()).toContain('no-op')
+    expect(followupsRollback).toContain('assigned_to <> actor_id')
+    expect(followupsRollback).not.toContain('create or replace function public.set_crm_lead_state')
+  })
+
+  it('locks the acting member with FOR SHARE and drops the dead profile-exists branch', () => {
+    expect(followups).toMatch(/user_id = actor_id\s+and status = 'active'\s+for share/i)
+    expect(followups).not.toMatch(/exists \(select 1 from public\.profiles as profile where profile\.id = old\.user_id\)/)
+    expect(hardening).toContain('exists (select 1 from public.profiles as profile where profile.id = old.user_id)')
+    expect(followups).toContain("if inviter_role is null or inviter_role not in ('owner', 'agency_admin')")
+  })
+
+  it('locks the organization before memberships and rejects null lead status or priority', () => {
+    expect(followups).toContain('public.leave_organization(p_organization_id uuid)')
+    expect(followups).toMatch(/perform 1\s+from public\.organizations\s+where id = p_organization_id\s+for update/)
+    expect(followups).toContain('if p_status is null or p_status not in')
+    expect(followups).toContain('if p_priority is null or p_priority not in')
+    expect(concurrentMutualRemove).toContain('remove_organization_member')
+    expect(concurrentMutualRemove).toContain('40P01')
   })
 })

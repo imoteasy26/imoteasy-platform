@@ -3,8 +3,9 @@
 -- Run only against a disposable local database after:
 --   1. supabase/tests/rls/local_harness.sql
 --   2. every file in supabase/migrations/ in name order, including
---      20261112130000_organization_rls_hardening.sql and
---      20261112140000_fix_invitation_inviter_role_null.sql
+--      20261112130000_organization_rls_hardening.sql,
+--      20261112140000_fix_invitation_inviter_role_null.sql, and
+--      20261112150000_org_rls_followups.sql
 -- The transaction always rolls back its synthetic fixtures. A failed
 -- assertion raises `RLS_TEST_FAILED: ...`.
 --
@@ -287,6 +288,112 @@ begin
         raise;
       end if;
   end;
+end;
+$$;
+
+-- An assistant (or broker) must not claim an unassigned lead in the same org.
+-- `assigned_to <> actor_id` is UNKNOWN when assigned_to is NULL; the follow-up
+-- migration compares with `is distinct from`.
+reset role;
+set session_replication_role = replica;
+with created as (
+  insert into public.crm_leads (
+    organization_id, contact_id, listing_id, source, assigned_to, created_by
+  )
+  select organization_id, contact_id, listing_id, 'other', null, created_by
+  from public.crm_leads
+  where id = (select v from ids where k = 'lead1')
+  returning id
+)
+insert into ids (k, v)
+select 'lead_unassigned', id from created;
+set session_replication_role = origin;
+
+set local role authenticated;
+select pg_temp.login('00000000-0000-4000-8000-0000000000a4');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.set_crm_lead_state(%L::uuid, %L, %L, %L::uuid, null::timestamptz)',
+      (select v from ids where k = 'lead_unassigned'),
+      'contacted',
+      'normal',
+      '00000000-0000-4000-8000-0000000000a4'
+    ),
+    'lead_assignment_required',
+    'assistant took an unassigned lead'
+  );
+end;
+$$;
+
+select pg_temp.login('00000000-0000-4000-8000-0000000000a3');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.set_crm_lead_state(%L::uuid, %L, %L, %L::uuid, null::timestamptz)',
+      (select v from ids where k = 'lead_unassigned'),
+      'contacted',
+      'normal',
+      '00000000-0000-4000-8000-0000000000a3'
+    ),
+    'lead_assignment_required',
+    'broker took an unassigned lead'
+  );
+end;
+$$;
+
+select pg_temp.login('00000000-0000-4000-8000-0000000000a1');
+select public.set_crm_lead_state(
+  (select v from ids where k = 'lead_unassigned'),
+  'new',
+  'normal',
+  '00000000-0000-4000-8000-0000000000a4',
+  null
+);
+select pg_temp.check(
+  (select assigned_to from public.crm_leads where id = (select v from ids where k = 'lead_unassigned'))
+    = '00000000-0000-4000-8000-0000000000a4',
+  'owner could not assign an unassigned lead'
+);
+
+select pg_temp.login('00000000-0000-4000-8000-0000000000a4');
+select public.set_crm_lead_state(
+  (select v from ids where k = 'lead_unassigned'),
+  'contacted',
+  'normal',
+  '00000000-0000-4000-8000-0000000000a4',
+  null
+);
+select pg_temp.check(
+  (select status from public.crm_leads where id = (select v from ids where k = 'lead_unassigned')) = 'contacted',
+  'assistant could not update an assigned lead'
+);
+
+select pg_temp.login('00000000-0000-4000-8000-0000000000a1');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.set_crm_lead_state(%L::uuid, null, %L, %L::uuid, null::timestamptz)',
+      (select v from ids where k = 'lead1'),
+      'normal',
+      '00000000-0000-4000-8000-0000000000a3'
+    ),
+    'invalid_lead_status',
+    'null lead status was accepted'
+  );
+  perform pg_temp.expect_error(
+    format(
+      'select public.set_crm_lead_state(%L::uuid, %L, null, %L::uuid, null::timestamptz)',
+      (select v from ids where k = 'lead1'),
+      'contacted',
+      '00000000-0000-4000-8000-0000000000a3'
+    ),
+    'invalid_lead_priority',
+    'null lead priority was accepted'
+  );
 end;
 $$;
 
