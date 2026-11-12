@@ -371,6 +371,32 @@ select pg_temp.check(
   'assistant could not update an assigned lead'
 );
 
+select pg_temp.login('00000000-0000-4000-8000-0000000000a1');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.set_crm_lead_state(%L::uuid, null, %L, %L::uuid, null::timestamptz)',
+      (select v from ids where k = 'lead1'),
+      'normal',
+      '00000000-0000-4000-8000-0000000000a3'
+    ),
+    'invalid_lead_status',
+    'null lead status was accepted'
+  );
+  perform pg_temp.expect_error(
+    format(
+      'select public.set_crm_lead_state(%L::uuid, %L, null, %L::uuid, null::timestamptz)',
+      (select v from ids where k = 'lead1'),
+      'contacted',
+      '00000000-0000-4000-8000-0000000000a3'
+    ),
+    'invalid_lead_priority',
+    'null lead priority was accepted'
+  );
+end;
+$$;
+
 -- agency_admin cannot remove an owner.
 select pg_temp.login('00000000-0000-4000-8000-0000000000a2');
 do $$

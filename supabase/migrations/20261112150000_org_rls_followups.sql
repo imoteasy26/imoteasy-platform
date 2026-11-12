@@ -5,7 +5,8 @@
 -- 1. MEDIUM: set_crm_lead_state used `assigned_to <> actor_id`, which is
 --    UNKNOWN when assigned_to is NULL, so an assistant or broker in the same
 --    organization could claim an unassigned lead. Compare with
---    `is distinct from` instead.
+--    `is distinct from` instead. NULL p_status / p_priority raise
+--    invalid_lead_status / invalid_lead_priority instead of a NOT NULL error.
 -- 2. LOW: lock the acting member row with FOR SHARE in
 --    remove_organization_member and create_organization_invitation so the
 --    actor's role cannot change mid-statement. leave_organization already
@@ -14,6 +15,13 @@
 --    in private.guard_last_org_owner. organization_memberships.user_id is
 --    ON DELETE RESTRICT, so the profile cannot disappear while the row
 --    exists; the check never changed the outcome.
+-- 4. LOW-MEDIUM: lock the organization row first in leave_organization and
+--    remove_organization_member (`perform 1 from public.organizations
+--    where id = p_organization_id for update`) so the lock order is always
+--    org then membership. Without that, two owners removing each other can
+--    deadlock (40P01) on FOR SHARE of their own row vs FOR UPDATE of the
+--    other. create_organization_invitation only locks the inviter
+--    membership, so it does not take an organization lock.
 --
 -- Idempotent: a second apply replaces the functions with the same bodies.
 
@@ -36,10 +44,12 @@ declare
   lead_row public.crm_leads%rowtype;
 begin
   if actor_id is null then raise exception 'authentication_required'; end if;
-  if p_status not in ('new', 'contacted', 'qualified', 'viewing_scheduled', 'viewing_completed', 'offer_received', 'negotiation', 'under_contract', 'won', 'lost') then
+  if p_status is null or p_status not in ('new', 'contacted', 'qualified', 'viewing_scheduled', 'viewing_completed', 'offer_received', 'negotiation', 'under_contract', 'won', 'lost') then
     raise exception 'invalid_lead_status';
   end if;
-  if p_priority not in ('low', 'normal', 'high', 'urgent') then raise exception 'invalid_lead_priority'; end if;
+  if p_priority is null or p_priority not in ('low', 'normal', 'high', 'urgent') then
+    raise exception 'invalid_lead_priority';
+  end if;
 
   select * into lead_row from public.crm_leads where id = p_lead_id;
   if lead_row.id is null then raise exception 'lead_not_found'; end if;
@@ -110,6 +120,56 @@ $$;
 
 revoke all on function private.guard_last_org_owner() from public, anon, authenticated;
 
+
+create or replace function public.leave_organization(p_organization_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  actor_id uuid := (select auth.uid());
+  membership public.organization_memberships%rowtype;
+begin
+  if actor_id is null then
+    raise exception 'authentication_required';
+  end if;
+
+  perform 1
+  from public.organizations
+  where id = p_organization_id
+  for update;
+
+  select * into membership
+  from public.organization_memberships
+  where organization_id = p_organization_id
+    and user_id = actor_id
+    and status = 'active'
+  for update;
+  if membership.user_id is null then
+    raise exception 'organization_membership_required';
+  end if;
+
+  update public.organization_memberships
+  set status = 'removed', updated_at = now()
+  where organization_id = p_organization_id
+    and user_id = actor_id
+    and status = 'active';
+
+  insert into public.organization_events (organization_id, actor_id, event_type, subject_user_id, event_data)
+  values (
+    p_organization_id,
+    actor_id,
+    'member_left',
+    actor_id,
+    jsonb_build_object('role', membership.role)
+  );
+end;
+$$;
+
+revoke all on function public.leave_organization(uuid) from public, anon;
+grant execute on function public.leave_organization(uuid) to authenticated;
+
 create or replace function public.remove_organization_member(p_organization_id uuid, p_user_id uuid)
 returns void
 language plpgsql
@@ -130,6 +190,11 @@ begin
   if p_user_id = actor_id then
     raise exception 'cannot_remove_self';
   end if;
+
+  perform 1
+  from public.organizations
+  where id = p_organization_id
+  for update;
 
   select role into actor_role
   from public.organization_memberships

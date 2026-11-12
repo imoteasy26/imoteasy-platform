@@ -31,6 +31,7 @@ const followups = stripSqlComments(read('supabase/migrations/20261112150000_org_
 const followupsRollback = read('supabase/rollback/20261112150000_org_rls_followups.rollback.sql')
 const isolationTest = read('supabase/tests/rls/organizations_isolation.sql')
 const concurrentLeave = read('supabase/tests/rls/organizations_concurrent_leave.sh')
+const concurrentMutualRemove = read('supabase/tests/rls/organizations_concurrent_mutual_remove.sh')
 const databaseTypes = read('lib/supabase/database.types.ts')
 
 const roleListSql = ORGANIZATION_ROLES.map((role) => `'${role}'`).join(', ')
@@ -142,6 +143,8 @@ describe('rollback and behavioral tests', () => {
     expect(isolationTest).toContain('broker took an unassigned lead')
     expect(isolationTest).toContain('owner could not assign an unassigned lead')
     expect(isolationTest).toContain('assistant could not update an assigned lead')
+    expect(isolationTest).toContain('null lead status was accepted')
+    expect(isolationTest).toContain('null lead priority was accepted')
   })
 })
 
@@ -160,5 +163,14 @@ describe('org RLS follow-up migration', () => {
     expect(followups).not.toMatch(/exists \(select 1 from public\.profiles as profile where profile\.id = old\.user_id\)/)
     expect(hardening).toContain('exists (select 1 from public.profiles as profile where profile.id = old.user_id)')
     expect(followups).toContain("if inviter_role is null or inviter_role not in ('owner', 'agency_admin')")
+  })
+
+  it('locks the organization before memberships and rejects null lead status or priority', () => {
+    expect(followups).toContain('public.leave_organization(p_organization_id uuid)')
+    expect(followups).toMatch(/perform 1\s+from public\.organizations\s+where id = p_organization_id\s+for update/)
+    expect(followups).toContain('if p_status is null or p_status not in')
+    expect(followups).toContain('if p_priority is null or p_priority not in')
+    expect(concurrentMutualRemove).toContain('remove_organization_member')
+    expect(concurrentMutualRemove).toContain('40P01')
   })
 })

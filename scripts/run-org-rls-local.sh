@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Apply Imoteasy migrations on a disposable local Postgres, verify the new
-# migrations twice, run isolation and concurrent-leave tests, roll them back
+# migrations twice, run isolation, concurrent-leave, and concurrent mutual-remove tests, roll them back
 # in reverse order, re-apply, and re-test. Never points at a remote database.
 set -euo pipefail
 
@@ -34,6 +34,18 @@ createdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" "$DB"
 
 run() { "${psql[@]}" -d "$DB" "$@"; }
 
+run_mutual_remove_repeats() {
+  local label="$1"
+  local runs="${MUTUAL_REMOVE_RUNS:-5}"
+  local i
+  echo "== concurrent two-owner mutual removal (${label}, ${runs} runs) =="
+  for i in $(seq 1 "$runs"); do
+    echo "  mutual-remove ${label} run ${i}/${runs}"
+    "$ROOT/supabase/tests/rls/organizations_concurrent_mutual_remove.sh"
+  done
+}
+
+
 echo "== harness =="
 run -f "$ROOT/supabase/tests/rls/local_harness.sql"
 
@@ -61,6 +73,8 @@ run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
 echo "== concurrent two-owner leave (1) =="
 "$ROOT/supabase/tests/rls/organizations_concurrent_leave.sh"
 
+run_mutual_remove_repeats "before rollback"
+
 echo "== rollback new migrations (150000, then 140000, then 130000) =="
 run --single-transaction -f "$ROOT/supabase/rollback/20261112150000_org_rls_followups.rollback.sql"
 run --single-transaction -f "$ROOT/supabase/rollback/20261112140000_fix_invitation_inviter_role_null.rollback.sql"
@@ -76,6 +90,8 @@ run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
 
 echo "== concurrent two-owner leave (2) =="
 "$ROOT/supabase/tests/rls/organizations_concurrent_leave.sh"
+
+run_mutual_remove_repeats "after re-apply"
 
 echo "All local org/RLS checks passed."
 if [ "$started_here" = 1 ] && [ "${KEEP_PG:-0}" != 1 ]; then
