@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  LISTING_ALT_INVISIBLE_CODEPOINTS,
   LISTING_ALT_TEXT_MAX_LENGTH,
   SUBMIT_LISTING_ALT_REQUIRED_MESSAGE,
   SUBMIT_LISTING_MISSING_IMAGES_MESSAGE,
@@ -50,17 +51,28 @@ describe('normalizeListingAltText', () => {
 })
 
 describe('listingAltTextHasVisibleContent', () => {
-  it('rejects TAB, newline, NBSP, ZWSP, and BOM as the only content', () => {
-    expect(listingAltTextHasVisibleContent('\t')).toBe(false)
-    expect(listingAltTextHasVisibleContent('\n')).toBe(false)
-    expect(listingAltTextHasVisibleContent('\u00A0')).toBe(false)
-    expect(listingAltTextHasVisibleContent('\u200B')).toBe(false)
-    expect(listingAltTextHasVisibleContent('\uFEFF')).toBe(false)
-    expect(listingAltTextHasVisibleContent('\t\n\u00A0\u200B\uFEFF')).toBe(false)
+  it('rejects every code point in the shared invisible list, including U+2007, U+202F, U+3000, and U+2028', () => {
+    expect(LISTING_ALT_INVISIBLE_CODEPOINTS).toHaveLength(43)
+    expect(LISTING_ALT_INVISIBLE_CODEPOINTS).toEqual(expect.arrayContaining([
+      0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020,
+      0x0085, 0x00a0, 0x00ad, 0x115f, 0x1160, 0x1680, 0x180e,
+      0x2000, 0x2007, 0x200b, 0x200f, 0x2028, 0x2029, 0x202f, 0x205f,
+      0x2060, 0x2064, 0x2800, 0x3000, 0x3164, 0xfeff, 0xffa0,
+    ]))
+    for (const codePoint of LISTING_ALT_INVISIBLE_CODEPOINTS) {
+      expect(listingAltTextHasVisibleContent(String.fromCodePoint(codePoint)), `U+${codePoint.toString(16).toUpperCase()}`).toBe(false)
+    }
+    expect(listingAltTextHasVisibleContent(LISTING_ALT_INVISIBLE_CODEPOINTS.map((codePoint) => String.fromCodePoint(codePoint)).join(''))).toBe(false)
+    expect(listingAltTextHasVisibleContent('\u2007')).toBe(false)
+    expect(listingAltTextHasVisibleContent('\u202F')).toBe(false)
+    expect(listingAltTextHasVisibleContent('\u3000')).toBe(false)
+    expect(listingAltTextHasVisibleContent('\u2028')).toBe(false)
   })
 
   it('accepts real text even when surrounded by invisible characters', () => {
     expect(listingAltTextHasVisibleContent('\u200BКухня\u00A0')).toBe(true)
+    expect(listingAltTextHasVisibleContent('\u2007Кухня\u202F')).toBe(true)
+    expect(listingAltTextHasVisibleContent('\u3000Кухня\u2028')).toBe(true)
     expect(listingAltTextHasVisibleContent('Дневна')).toBe(true)
   })
 })
@@ -132,9 +144,12 @@ describe('reviewListingImagesForPublication', () => {
     expect(review.duplicateAltTexts).toEqual(['Кухня'])
   })
 
-  it('treats ZWSP and BOM as invisible in duplicate keys and missing-alt checks', () => {
+  it('treats the shared invisible list as invisible in duplicate keys and missing-alt checks', () => {
     expect(canonicalizeListingAltText('Ку\u200Bхня\uFEFF')).toBe('Кухня')
+    expect(canonicalizeListingAltText('\u2007Кухня\u202F')).toBe('Кухня')
+    expect(canonicalizeListingAltText('\u3000Кухня\u2028')).toBe('Кухня')
     expect(listingAltTextDuplicateKey('Ку\u200Bхня')).toBe(listingAltTextDuplicateKey('Кухня'))
+    expect(listingAltTextDuplicateKey('\u2007Кухня')).toBe(listingAltTextDuplicateKey('Кухня'))
     const review = reviewListingImagesForPublication([
       { id: 'a', alt_text: '\u200B', is_decorative: false },
       { id: 'b', alt_text: 'Кухня', is_decorative: false },

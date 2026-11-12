@@ -2,11 +2,34 @@ export const LISTING_ALT_TEXT_MAX_LENGTH = 200
 
 export const LISTING_STATUSES_REQUIRING_ALT = ['pending_review', 'published'] as const
 
-/** POSIX space plus NBSP, ZWSP, and BOM — the same set as the SQL trigger. */
-const LISTING_ALT_INVISIBLE_CHARS = '\\s\\u00A0\\u200B\\uFEFF'
-const LISTING_ALT_ZERO_WIDTH = /[\u200B\uFEFF]/gu
-const LISTING_ALT_SPACE_RUN = /[\s\u00A0]+/gu
-const LISTING_ALT_VISIBLE_CHAR = new RegExp(`[^${LISTING_ALT_INVISIBLE_CHARS}]`, 'u')
+/**
+ * Invisible and space characters, identical to private.listing_alt_invisible_chars()
+ * in the SQL trigger. The list is explicit so it does not depend on JS /\s/ or
+ * on a regex locale. Space-like members collapse to a single ASCII space in
+ * canonicalizeListingAltText; the rest are stripped.
+ */
+export const LISTING_ALT_INVISIBLE_CODEPOINTS: readonly number[] = [
+  0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020,
+  0x0085, 0x00a0, 0x00ad,
+  0x115f, 0x1160, 0x1680, 0x180e,
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007,
+  0x2008, 0x2009, 0x200a, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f,
+  0x2028, 0x2029, 0x202f, 0x205f,
+  0x2060, 0x2061, 0x2062, 0x2063, 0x2064,
+  0x2800, 0x3000, 0x3164, 0xfeff, 0xffa0,
+]
+
+const LISTING_ALT_INVISIBLE = new Set(LISTING_ALT_INVISIBLE_CODEPOINTS)
+
+/** Space-like subset of LISTING_ALT_INVISIBLE_CODEPOINTS; collapsed to one space. */
+const LISTING_ALT_SPACE_CODEPOINTS = new Set<number>([
+  0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020,
+  0x0085, 0x00a0, 0x1680,
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007,
+  0x2008, 0x2009, 0x200a,
+  0x2028, 0x2029, 0x202f, 0x205f,
+  0x2800, 0x3000,
+])
 
 export const SUBMIT_LISTING_MISSING_IMAGES_MESSAGE = 'Добави поне една снимка, преди да изпратиш обявата.'
 export const SUBMIT_LISTING_ALT_REQUIRED_MESSAGE = 'Добави алтернативен текст към всяка недекоративна снимка, преди да изпратиш обявата.'
@@ -36,11 +59,31 @@ export type ListingImageRegistrationInput = {
 }
 
 export function listingAltTextHasVisibleContent(value: string) {
-  return LISTING_ALT_VISIBLE_CHAR.test(value)
+  for (const char of value) {
+    if (!LISTING_ALT_INVISIBLE.has(char.codePointAt(0)!)) return true
+  }
+  return false
 }
 
 export function canonicalizeListingAltText(value: string) {
-  return value.replace(LISTING_ALT_ZERO_WIDTH, '').replace(LISTING_ALT_SPACE_RUN, ' ').trim()
+  let result = ''
+  let lastWasSpace = false
+  for (const char of value) {
+    const codePoint = char.codePointAt(0)!
+    if (LISTING_ALT_SPACE_CODEPOINTS.has(codePoint)) {
+      if (!lastWasSpace) {
+        result += ' '
+        lastWasSpace = true
+      }
+      continue
+    }
+    if (LISTING_ALT_INVISIBLE.has(codePoint)) {
+      continue
+    }
+    result += char
+    lastWasSpace = false
+  }
+  return result.trim()
 }
 
 /** Duplicate comparison key: canonical whitespace, NFC, Unicode-aware lowercase (bg). */
