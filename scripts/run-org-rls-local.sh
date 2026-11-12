@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Apply Imoteasy migrations on a disposable local Postgres, verify the new
-# migrations twice, run isolation, concurrent-leave, and concurrent mutual-remove tests, roll them back
-# in reverse order, re-apply, and re-test. Never points at a remote database.
+# migrations twice, run isolation, accessible-alt, concurrent-leave, and
+# concurrent mutual-remove tests, roll them back in reverse order, re-apply,
+# and re-test. Never points at a remote database.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -58,6 +59,7 @@ done
 HARDENING="$ROOT/supabase/migrations/20261112130000_organization_rls_hardening.sql"
 INVITE_FIX="$ROOT/supabase/migrations/20261112140000_fix_invitation_inviter_role_null.sql"
 FOLLOWUPS="$ROOT/supabase/migrations/20261112150000_org_rls_followups.sql"
+DECORATIVE="$ROOT/supabase/migrations/20261112160000_listing_images_is_decorative.sql"
 
 echo "== pre-apply check (expected 0 on an empty database) =="
 run -c "select count(*) as listing_images_alt_text_over_200 from public.listing_images where char_length(alt_text) > 200;"
@@ -66,16 +68,21 @@ echo "== second apply of the new migrations (idempotency) =="
 run -f "$HARDENING"
 run -f "$INVITE_FIX"
 run -f "$FOLLOWUPS"
+run -f "$DECORATIVE"
 
 echo "== isolation test (1) =="
 run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
+
+echo "== accessible-alt test (1) =="
+run -f "$ROOT/supabase/tests/rls/listing_images_is_decorative.sql"
 
 echo "== concurrent two-owner leave (1) =="
 "$ROOT/supabase/tests/rls/organizations_concurrent_leave.sh"
 
 run_mutual_remove_repeats "before rollback"
 
-echo "== rollback new migrations (150000, then 140000, then 130000) =="
+echo "== rollback new migrations (160000, then 150000, then 140000, then 130000) =="
+run --single-transaction -f "$ROOT/supabase/rollback/20261112160000_listing_images_is_decorative.rollback.sql"
 run --single-transaction -f "$ROOT/supabase/rollback/20261112150000_org_rls_followups.rollback.sql"
 run --single-transaction -f "$ROOT/supabase/rollback/20261112140000_fix_invitation_inviter_role_null.rollback.sql"
 run --single-transaction -f "$ROOT/supabase/rollback/20261112130000_organization_rls_hardening.rollback.sql"
@@ -84,9 +91,13 @@ echo "== re-apply the new migrations after rollback =="
 run -f "$HARDENING"
 run -f "$INVITE_FIX"
 run -f "$FOLLOWUPS"
+run -f "$DECORATIVE"
 
 echo "== isolation test (2) =="
 run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
+
+echo "== accessible-alt test (2) =="
+run -f "$ROOT/supabase/tests/rls/listing_images_is_decorative.sql"
 
 echo "== concurrent two-owner leave (2) =="
 "$ROOT/supabase/tests/rls/organizations_concurrent_leave.sh"

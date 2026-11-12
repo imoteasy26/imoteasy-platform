@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   LISTING_ALT_TEXT_MAX_LENGTH,
   listingAltTextIsRequired,
+  listingImageAltAttribute,
   normalizeListingAltText,
+  reviewListingImagesForPublication,
 } from '@/lib/listing-alt-text'
 
 describe('normalizeListingAltText', () => {
@@ -32,9 +34,52 @@ describe('normalizeListingAltText', () => {
 })
 
 describe('listingAltTextIsRequired', () => {
-  it('is required only for published listings', () => {
+  it('is required for pending_review and published non-decorative images', () => {
     expect(listingAltTextIsRequired('published')).toBe(true)
+    expect(listingAltTextIsRequired('pending_review')).toBe(true)
     expect(listingAltTextIsRequired('draft')).toBe(false)
-    expect(listingAltTextIsRequired('pending_review')).toBe(false)
+    expect(listingAltTextIsRequired('rejected')).toBe(false)
+    expect(listingAltTextIsRequired('published', true)).toBe(false)
+    expect(listingAltTextIsRequired('pending_review', true)).toBe(false)
+  })
+})
+
+describe('listingImageAltAttribute', () => {
+  it('returns the image alt text and never falls back to a title', () => {
+    expect(listingImageAltAttribute({ alt_text: '  Кухня  ', is_decorative: false })).toBe('Кухня')
+    expect(listingImageAltAttribute({ alt_text: '', is_decorative: false })).toBe('')
+    expect(listingImageAltAttribute({ alt_text: 'Кухня', is_decorative: true })).toBe('')
+    expect(listingImageAltAttribute(undefined)).toBe('')
+  })
+})
+
+describe('reviewListingImagesForPublication', () => {
+  it('reports non-decorative images with empty or whitespace alt text', () => {
+    const review = reviewListingImagesForPublication([
+      { id: 'a', alt_text: 'Дневна', is_decorative: false },
+      { id: 'b', alt_text: '   ', is_decorative: false },
+      { id: 'c', alt_text: '', is_decorative: true },
+    ])
+    expect(review.missingAltImageIds).toEqual(['b'])
+    expect(review.duplicateAltTexts).toEqual([])
+  })
+
+  it('flags identical canonical alt text reused within one listing', () => {
+    const review = reviewListingImagesForPublication([
+      { id: 'a', alt_text: '  Дневна  с тераса ', is_decorative: false },
+      { id: 'b', alt_text: 'Дневна с тераса', is_decorative: false },
+      { id: 'c', alt_text: 'Кухня', is_decorative: false },
+    ])
+    expect(review.missingAltImageIds).toEqual([])
+    expect(review.duplicateAltTexts).toEqual(['Дневна с тераса'])
+  })
+
+  it('does not treat empty decorative alts as duplicates', () => {
+    const review = reviewListingImagesForPublication([
+      { id: 'a', alt_text: '', is_decorative: true },
+      { id: 'b', alt_text: '   ', is_decorative: true },
+    ])
+    expect(review.missingAltImageIds).toEqual([])
+    expect(review.duplicateAltTexts).toEqual([])
   })
 })

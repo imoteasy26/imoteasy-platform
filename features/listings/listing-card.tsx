@@ -4,6 +4,7 @@ import { BedDouble, MapPin, Ruler, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatArea, formatPrice, propertyTypeLabels, transactionLabels } from '@/lib/format'
+import { listingImageAltAttribute } from '@/lib/listing-alt-text'
 import type { ListingWithImages } from '@/lib/listing-types'
 import { FavoriteButton } from './favorite-button'
 
@@ -15,7 +16,7 @@ export function ListingCard({ listing, initiallySaved = false }: { listing: List
     <Card className="property-card group relative gap-0 overflow-hidden border-line p-0 shadow-none">
       <div className="property-image relative">
         {photoUrl ? (
-          <Image alt={cover.alt_text || listing.title} className="object-cover transition duration-500 group-hover:scale-[1.035]" fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" src={photoUrl} />
+          <Image alt={listingImageAltAttribute(cover)} className="object-cover transition duration-500 group-hover:scale-[1.035]" fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" src={photoUrl} />
         ) : (
           <div aria-hidden className="grid size-full place-items-center text-brand/45"><Sparkles size={30} strokeWidth={1.4} /></div>
         )}

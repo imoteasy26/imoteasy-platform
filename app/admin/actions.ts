@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { reviewListingImagesForPublication } from '@/lib/listing-alt-text'
 import { createClient } from '@/lib/supabase/server'
 
 async function requireAdmin() {
@@ -19,6 +20,17 @@ export async function moderateListing(formData: FormData) {
   if (!parsed.success) redirect('/admin?updated=error')
   const supabase = await requireAdmin()
   const approved = parsed.data.decision === 'approve'
+
+  if (approved) {
+    const { data: images, error: imagesError } = await supabase
+      .from('listing_images')
+      .select('id, alt_text, is_decorative')
+      .eq('listing_id', parsed.data.id)
+    if (imagesError || !images) redirect('/admin?updated=error')
+    const review = reviewListingImagesForPublication(images)
+    if (review.missingAltImageIds.length) redirect('/admin?updated=alt_required')
+  }
+
   const { error } = await supabase.from('listings').update({ status: approved ? 'published' : 'rejected', published_at: approved ? new Date().toISOString() : null }).eq('id', parsed.data.id).eq('status', 'pending_review')
   revalidatePath('/admin')
   revalidatePath('/imoti')

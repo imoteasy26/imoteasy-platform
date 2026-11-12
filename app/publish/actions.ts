@@ -7,7 +7,7 @@ import { approximateCoordinate } from '@/lib/geo'
 import { withSignedImageUrls } from '@/lib/listing-images'
 import { createClient } from '@/lib/supabase/server'
 import { getBrokerAccess } from '@/lib/broker-workspace'
-import { listingAltTextIsRequired, normalizeListingAltText } from '@/lib/listing-alt-text'
+import { listingAltTextIsRequired, normalizeListingAltText, reviewListingImagesForPublication } from '@/lib/listing-alt-text'
 
 const listingIdSchema = z.string().uuid()
 const imagePathsSchema = z.array(z.string().min(1).max(512)).min(1).max(8)
@@ -146,7 +146,7 @@ export async function registerListingImages(listingId: string, input: unknown) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false as const, message: 'Влез в профила си, за да качваш снимки.' }
 
-  const { data: listing } = await supabase.from('listings').select('id, title, slug')
+  const { data: listing } = await supabase.from('listings').select('id, slug')
     .eq('id', safeId.data).maybeSingle()
   if (!listing || !await canManageListing(supabase, user.id, listing.id)) return { success: false as const, message: 'Обявата не е намерена или нямаш достъп до нея.' }
 
@@ -178,12 +178,13 @@ export async function registerListingImages(listingId: string, input: unknown) {
   const rows = parsedPaths.data.map((storage_path, index) => ({
     listing_id: listing.id,
     storage_path,
-    alt_text: `${listing.title}, снимка ${nextPosition + index + 1}`,
+    alt_text: '',
+    is_decorative: false,
     position: nextPosition + index,
     is_cover: (existingImages?.length ?? 0) === 0 && index === 0,
   }))
   const { data: savedImages, error } = await supabase.from('listing_images').insert(rows)
-    .select('id, storage_path, alt_text, position, is_cover')
+    .select('id, storage_path, alt_text, position, is_cover, is_decorative')
   if (error || !savedImages) return { success: false as const, message: 'Не успяхме да запишем снимките. Опитай отново.' }
 
   revalidatePath('/dashboard')
@@ -204,8 +205,12 @@ export async function submitListingForReview(listingId: string) {
   if (!listing || !await canManageListing(supabase, user.id, listing.id) || !['draft', 'rejected'].includes(listing.status)) {
     return { success: false as const, message: 'Обявата не е намерена или не може да бъде изпратена за преглед.' }
   }
-  const { data: image } = await supabase.from('listing_images').select('id').eq('listing_id', listing.id).limit(1).maybeSingle()
-  if (!image) return { success: false as const, message: 'Добави поне една снимка, преди да изпратиш обявата.' }
+  const { data: images } = await supabase.from('listing_images').select('id, alt_text, is_decorative').eq('listing_id', listing.id)
+  if (!images?.length) return { success: false as const, message: 'Добави поне една снимка, преди да изпратиш обявата.' }
+  const review = reviewListingImagesForPublication(images)
+  if (review.missingAltImageIds.length) {
+    return { success: false as const, message: 'Добави алтернативен текст към всяка недекоративна снимка, преди да изпратиш обявата.' }
+  }
 
   const { data: updated, error } = await supabase.from('listings').update({ status: 'pending_review' })
     .eq('id', listing.id).eq('status', listing.status).select('id').maybeSingle()
@@ -250,11 +255,12 @@ export async function deleteListingImage(listingId: string, imageId: string) {
   return { success: true as const }
 }
 
-export async function updateListingImageAltText(listingId: string, imageId: string, altText: string) {
+export async function updateListingImageAltText(listingId: string, imageId: string, altText: string, isDecorative: boolean) {
   const safeListingId = listingIdSchema.safeParse(listingId)
   const safeImageId = listingIdSchema.safeParse(imageId)
   const parsedAlt = normalizeListingAltText(altText)
   if (!safeListingId.success || !safeImageId.success) return { success: false as const, message: 'Снимката не е валидна.' }
+  if (typeof isDecorative !== 'boolean') return { success: false as const, message: 'Снимката не е валидна.' }
   if (!parsedAlt.ok) return { success: false as const, message: parsedAlt.message }
 
   const supabase = await createClient()
@@ -266,20 +272,20 @@ export async function updateListingImageAltText(listingId: string, imageId: stri
   if (!listing || !await canManageListing(supabase, user.id, listing.id)) {
     return { success: false as const, message: 'Снимката не е намерена.' }
   }
-  if (listingAltTextIsRequired(listing.status) && parsedAlt.value.length === 0) {
-    return { success: false as const, message: 'Публикуваната обява трябва да има алтернативен текст за всяка снимка.' }
+  if (listingAltTextIsRequired(listing.status, isDecorative) && parsedAlt.value.length === 0) {
+    return { success: false as const, message: 'Обява в преглед или публикувана обява трябва да има алтернативен текст за всяка недекоративна снимка.' }
   }
 
   const { data: image } = await supabase.from('listing_images').select('id')
     .eq('id', safeImageId.data).eq('listing_id', listing.id).maybeSingle()
   if (!image) return { success: false as const, message: 'Снимката не е намерена.' }
 
-  const { error } = await supabase.from('listing_images').update({ alt_text: parsedAlt.value })
+  const { error } = await supabase.from('listing_images').update({ alt_text: parsedAlt.value, is_decorative: isDecorative })
     .eq('id', image.id).eq('listing_id', listing.id)
   if (error) return { success: false as const, message: 'Не успяхме да запишем алтернативния текст.' }
 
   revalidatePath('/dashboard')
   revalidatePath(`/dashboard/obavi/${listing.id}`)
   revalidatePath(`/imoti/${listing.slug}`)
-  return { success: true as const, altText: parsedAlt.value }
+  return { success: true as const, altText: parsedAlt.value, isDecorative }
 }

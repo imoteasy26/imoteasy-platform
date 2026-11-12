@@ -8,7 +8,7 @@ import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { deleteListingImage, registerListingImages, updateListingImageAltText } from '@/app/publish/actions'
-import { LISTING_ALT_TEXT_MAX_LENGTH, listingAltTextIsRequired } from '@/lib/listing-alt-text'
+import { LISTING_ALT_TEXT_MAX_LENGTH, listingAltTextIsRequired, listingImageAltAttribute } from '@/lib/listing-alt-text'
 
 type EditableImage = {
   id: string
@@ -16,6 +16,7 @@ type EditableImage = {
   alt_text: string
   position: number
   is_cover: boolean
+  is_decorative: boolean
   signed_url: string
 }
 
@@ -26,9 +27,9 @@ const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp']
 export function ListingImageManager({ listingId, listingStatus, ownerId, initialImages }: { listingId: string; listingStatus: string; ownerId: string; initialImages: EditableImage[] }) {
   const [images, setImages] = useState(initialImages)
   const [draftAlt, setDraftAlt] = useState<Record<string, string>>({})
+  const [draftDecorative, setDraftDecorative] = useState<Record<string, boolean>>({})
   const [message, setMessage] = useState('')
   const [isPending, startTransition] = useTransition()
-  const altRequired = listingAltTextIsRequired(listingStatus)
 
   async function uploadFiles(files: File[]) {
     if (images.length + files.length > maximumImages) {
@@ -89,21 +90,27 @@ export function ListingImageManager({ listingId, listingStatus, ownerId, initial
     })
   }
 
-  function saveAltText(image: EditableImage) {
-    const nextValue = draftAlt[image.id] ?? image.alt_text
+  function saveImageText(image: EditableImage) {
+    const nextDecorative = draftDecorative[image.id] ?? image.is_decorative
+    const nextValue = nextDecorative ? '' : (draftAlt[image.id] ?? image.alt_text)
     startTransition(async () => {
-      const result = await updateListingImageAltText(listingId, image.id, nextValue)
+      const result = await updateListingImageAltText(listingId, image.id, nextValue, nextDecorative)
       if (!result.success) {
         setMessage(result.message)
         return
       }
-      setImages((current) => current.map((item) => item.id === image.id ? { ...item, alt_text: result.altText } : item))
+      setImages((current) => current.map((item) => item.id === image.id ? { ...item, alt_text: result.altText, is_decorative: result.isDecorative } : item))
       setDraftAlt((current) => {
         const next = { ...current }
         delete next[image.id]
         return next
       })
-      setMessage('Алтернативният текст е запазен.')
+      setDraftDecorative((current) => {
+        const next = { ...current }
+        delete next[image.id]
+        return next
+      })
+      setMessage('Данните за снимката са запазени.')
     })
   }
 
@@ -111,7 +118,7 @@ export function ListingImageManager({ listingId, listingStatus, ownerId, initial
     <section aria-labelledby="listing-images-heading" className="rounded-2xl border border-line bg-white p-5 sm:p-6">
       <div>
         <h2 className="text-xl font-semibold tracking-tight text-ink" id="listing-images-heading">Снимки</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Първата снимка е основна. Можеш да добавяш или премахваш до {maximumImages} снимки и да редактираш алтернативния текст.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Първата снимка е основна. Можеш да добавяш или премахваш до {maximumImages} снимки, да пишеш алтернативен текст и изрично да маркираш декоративна снимка.</p>
       </div>
       <Field className="mt-5">
         <FieldLabel htmlFor="listing-image-upload">Добави снимки</FieldLabel>
@@ -122,26 +129,41 @@ export function ListingImageManager({ listingId, listingStatus, ownerId, initial
         <ul aria-label="Качени снимки" className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {images.map((image, index) => {
             const value = draftAlt[image.id] ?? image.alt_text
-            const emptyPublished = altRequired && value.trim().length === 0
+            const isDecorative = draftDecorative[image.id] ?? image.is_decorative
+            const emptyRequired = listingAltTextIsRequired(listingStatus, isDecorative) && value.trim().length === 0
+            const previewAlt = isDecorative ? '' : (listingImageAltAttribute({ alt_text: image.alt_text, is_decorative: isDecorative }) || `Снимка ${index + 1}`)
+            const isUnchanged = isDecorative === image.is_decorative && (isDecorative || value === image.alt_text)
             return (
               <li className="overflow-hidden rounded-xl border border-line" key={image.id}>
                 <div className="relative aspect-[1.35] bg-subtle">
-                  {image.signed_url ? <Image alt={image.alt_text || `Снимка ${index + 1}`} className="object-cover" fill sizes="(max-width: 640px) 50vw, 33vw" src={image.signed_url} /> : <div aria-label="Снимката временно не е достъпна" className="grid size-full place-items-center text-xs text-muted-foreground" role="img">Снимката временно не е достъпна</div>}
+                  {image.signed_url ? <Image alt={previewAlt} className="object-cover" fill sizes="(max-width: 640px) 50vw, 33vw" src={image.signed_url} /> : <div aria-label="Снимката временно не е достъпна" className="grid size-full place-items-center text-xs text-muted-foreground" role="img">Снимката временно не е достъпна</div>}
                   <span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold text-ink">{image.is_cover ? 'Основна снимка' : `Снимка ${index + 1}`}</span>
                 </div>
                 <div className="flex flex-col gap-2 p-2">
+                  <label className="flex items-start gap-2 text-sm leading-5 text-ink" htmlFor={`listing-image-decorative-${image.id}`}>
+                    <input
+                      checked={isDecorative}
+                      className="mt-0.5 size-4 accent-[var(--brand)]"
+                      id={`listing-image-decorative-${image.id}`}
+                      onChange={(event) => setDraftDecorative((current) => ({ ...current, [image.id]: event.target.checked }))}
+                      type="checkbox"
+                    />
+                    <span>Декоративна снимка</span>
+                  </label>
+                  <FieldDescription>Маркирай само ако снимката не носи информация за имота и не се нуждае от алтернативен текст.</FieldDescription>
                   <Field>
                     <FieldLabel htmlFor={`listing-image-alt-${image.id}`}>Алтернативен текст</FieldLabel>
                     <Input
+                      disabled={isDecorative}
                       id={`listing-image-alt-${image.id}`}
                       maxLength={LISTING_ALT_TEXT_MAX_LENGTH}
                       onChange={(event) => setDraftAlt((current) => ({ ...current, [image.id]: event.target.value }))}
-                      value={value}
+                      value={isDecorative ? '' : value}
                     />
-                    {emptyPublished ? <FieldDescription className="text-destructive">Публикуваната обява трябва да има описание за тази снимка.</FieldDescription> : <FieldDescription>{value.length} от {LISTING_ALT_TEXT_MAX_LENGTH} символа</FieldDescription>}
+                    {emptyRequired ? <FieldDescription className="text-destructive">Обява в преглед или публикувана обява трябва да има описание за тази снимка.</FieldDescription> : <FieldDescription>{isDecorative ? 'Декоративната снимка няма алтернативен текст.' : `${value.length} от ${LISTING_ALT_TEXT_MAX_LENGTH} символа`}</FieldDescription>}
                   </Field>
                   <div className="flex items-center justify-between gap-2">
-                    <Button disabled={isPending || value === image.alt_text} onClick={() => saveAltText(image)} size="sm" type="button">Запази текста</Button>
+                    <Button disabled={isPending || isUnchanged} onClick={() => saveImageText(image)} size="sm" type="button">Запази</Button>
                     <Button aria-label={`Изтрий снимка ${index + 1}`} disabled={isPending} onClick={() => removeImage(image)} size="sm" type="button" variant="outline"><Trash2 data-icon="inline-start" />Изтрий</Button>
                   </div>
                 </div>
@@ -150,7 +172,7 @@ export function ListingImageManager({ listingId, listingStatus, ownerId, initial
           })}
         </ul>
       ) : <p className="mt-5 rounded-xl border border-dashed border-line p-5 text-sm text-muted-foreground">Все още няма качени снимки.</p>}
-      {message ? <p aria-live="polite" className={`mt-4 text-sm ${message.includes('Не успяхме') || message.includes('изтече') || message.includes('най-много') || message.includes('Използвай') || message.includes('трябва да има') || message.includes('не е') ? 'text-destructive' : 'text-brand'}`}>{message}</p> : null}
+      {message ? <p aria-live="polite" className={`mt-4 text-sm ${message.includes('Не успяхме') || message.includes('изтече') || message.includes('най-много') || message.includes('Използвай') || message.includes('трябва да има') || message.includes('недекоративна') || message.includes('не е') ? 'text-destructive' : 'text-brand'}`}>{message}</p> : null}
     </section>
   )
 }

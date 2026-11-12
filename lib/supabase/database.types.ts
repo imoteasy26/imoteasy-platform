@@ -41,8 +41,8 @@ export type Database = {
         { id?: string; owner_id: string; organization_id?: string | null; title: string; slug: string; description: string; property_type: PropertyType; transaction_type: TransactionType; city: string; neighborhood?: string | null; price_eur: number; area_sqm: number; rooms?: number | null; bedrooms?: number | null; floor?: number | null; total_floors?: number | null; construction_type?: string | null; condition?: string | null; furnishing?: string | null; latitude?: number | null; longitude?: number | null; status?: ListingStatus; created_at?: string; updated_at?: string; published_at?: string | null }
       >
       listing_images: Table<
-        { id: string; listing_id: string; storage_path: string; alt_text: string; position: number; is_cover: boolean; created_at: string },
-        { id?: string; listing_id: string; storage_path: string; alt_text?: string; position?: number; is_cover?: boolean; created_at?: string }
+        { id: string; listing_id: string; storage_path: string; alt_text: string; position: number; is_cover: boolean; is_decorative: boolean; created_at: string },
+        { id?: string; listing_id: string; storage_path: string; alt_text?: string; position?: number; is_cover?: boolean; is_decorative?: boolean; created_at?: string }
       >
       favorites: Table<
         { user_id: string; listing_id: string; created_at: string },

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { FavoriteButton } from '@/features/listings/favorite-button'
 import { formatArea, formatPrice, propertyTypeLabels, transactionLabels } from '@/lib/format'
+import { listingImageAltAttribute } from '@/lib/listing-alt-text'
 import type { ListingWithImages } from '@/lib/listing-types'
 import type { Tables } from '@/lib/supabase/database.types'
 import { createInquiry, reportListing } from '@/app/imoti/[slug]/actions'
@@ -30,10 +31,10 @@ export function ListingDetail({ listing, signedIn, contactState, reportState, at
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section>
           <div className="relative overflow-hidden rounded-[1.5rem] bg-subtle">
-            {cover ? <Image alt={cover.alt_text || listing.title} className="max-h-[560px] w-full object-cover" height={900} priority sizes="(max-width: 1024px) 100vw, 70vw" src={cover.signed_url} width={1400} /> : <div className="grid min-h-[300px] place-items-center text-sm text-muted-foreground">Към тази обява все още няма снимки.</div>}
+            {cover ? <Image alt={listingImageAltAttribute(cover)} className="max-h-[560px] w-full object-cover" height={900} priority sizes="(max-width: 1024px) 100vw, 70vw" src={cover.signed_url} width={1400} /> : <div className="grid min-h-[300px] place-items-center text-sm text-muted-foreground">Към тази обява все още няма снимки.</div>}
             <FavoriteButton className="absolute right-4 top-4" listingId={listing.id} />
           </div>
-          {displayImages.length > 1 ? <div aria-label="Снимки на имота" className="mt-3 grid grid-cols-4 gap-3">{displayImages.slice(1, 5).map((image) => <div className="relative aspect-[1.4] overflow-hidden rounded-xl bg-subtle" key={image.id}><Image alt={image.alt_text || listing.title} className="object-cover" fill sizes="25vw" src={image.signed_url} /></div>)}</div> : null}
+          {displayImages.length > 1 ? <div aria-label="Снимки на имота" className="mt-3 grid grid-cols-4 gap-3">{displayImages.slice(1, 5).map((image) => <div className="relative aspect-[1.4] overflow-hidden rounded-xl bg-subtle" key={image.id}><Image alt={listingImageAltAttribute(image)} className="object-cover" fill sizes="25vw" src={image.signed_url} /></div>)}</div> : null}
           <div className="mt-7 flex flex-wrap items-center gap-2"><Badge>{transactionLabels[listing.transaction_type]}</Badge><Badge variant="secondary">{propertyTypeLabels[listing.property_type]}</Badge></div>
           <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-[-0.04em] text-ink sm:text-4xl">{listing.title}</h1>
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><MapPin aria-hidden size={16} />{[listing.neighborhood, listing.city].filter(Boolean).join(', ')} <span aria-hidden>·</span> <span>Точният адрес се споделя лично.</span></p>

@@ -13,7 +13,7 @@ async function attachImages(listings: PublicListing[]) {
   const supabase = await createClient()
   const { data } = await supabase
     .from('listing_images')
-    .select('id, listing_id, storage_path, alt_text, position, is_cover, created_at')
+    .select('id, listing_id, storage_path, alt_text, position, is_cover, is_decorative, created_at')
     .in('listing_id', listings.map((listing) => listing.id))
     .order('position', { ascending: true })
 
@@ -95,7 +95,7 @@ export async function getListingBySlug(slug: string) {
   if (error || !data) return null
 
   const [{ data: images }, { data: seller }, { data: priceHistory, error: priceHistoryError }] = await Promise.all([
-    supabase.from('listing_images').select('id, listing_id, storage_path, alt_text, position, is_cover, created_at').eq('listing_id', data.id).order('position'),
+    supabase.from('listing_images').select('id, listing_id, storage_path, alt_text, position, is_cover, is_decorative, created_at').eq('listing_id', data.id).order('position'),
     supabase.from('profiles').select('id, display_name, avatar_path, account_type, created_at').eq('id', data.owner_id).maybeSingle(),
     supabase.from('listing_price_history').select('id, listing_id, previous_price, new_price, changed_at').eq('listing_id', data.id).order('changed_at', { ascending: false }).limit(20),
   ])

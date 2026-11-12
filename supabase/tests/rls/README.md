@@ -29,8 +29,9 @@ done
 # Then, in a separate step (not in the migration):
 #   alter table public.listing_images validate constraint listing_images_alt_text_length;
 
-# The isolation test always rolls back its fixtures.
+# The isolation and accessible-alt tests always roll back their fixtures.
 psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/organizations_isolation.sql
+psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/listing_images_is_decorative.sql
 
 # Two parallel sessions: one of two concurrent owner leaves must fail.
 ./supabase/tests/rls/organizations_concurrent_leave.sh
@@ -41,14 +42,16 @@ psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/organizations_isolation.sql
 
 `scripts/run-org-rls-local.sh` does the same, then applies
 `20261112130000_organization_rls_hardening.sql`,
-`20261112140000_fix_invitation_inviter_role_null.sql`, and
-`20261112150000_org_rls_followups.sql` a second time (idempotency),
-rolls them back in reverse order (150000, then 140000, then 130000),
-re-applies all three, and re-runs the isolation, concurrent-leave, and
-concurrent mutual-remove tests (the mutual-remove script is repeated).
-The 140000 and 150000 rollbacks are documented no-ops: they keep the
-NULL-safe invitation function and the `is distinct from` lead-assignment
-check instead of restoring those holes.
+`20261112140000_fix_invitation_inviter_role_null.sql`,
+`20261112150000_org_rls_followups.sql`, and
+`20261112160000_listing_images_is_decorative.sql` a second time
+(idempotency), rolls them back in reverse order (160000, then 150000,
+then 140000, then 130000), re-applies all four, and re-runs the isolation,
+accessible-alt, concurrent-leave, and concurrent mutual-remove tests
+(the mutual-remove script is repeated). The 140000 and 150000 rollbacks
+are documented no-ops: they keep the NULL-safe invitation function and
+the `is distinct from` lead-assignment check instead of restoring those
+holes.
 
 `local_harness.sql` stubs the `anon` / `authenticated` / `service_role` roles,
 `auth.uid()` / `auth.users`, and a minimal `storage.buckets` / `storage.objects`
