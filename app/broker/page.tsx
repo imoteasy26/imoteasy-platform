@@ -1,8 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { ArrowUpRight, CalendarDays, CheckSquare, ContactRound, Home, Sparkles, Workflow } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { BrokerErrorNotice, BrokerMigrationNotice, BrokerStateNotice } from '@/features/broker/broker-state'
 import { getBrokerAccess } from '@/lib/broker-workspace'

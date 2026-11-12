@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeft, ArrowRight, Check, ImagePlus, Trash2 } from 'lucide-react'
@@ -11,7 +11,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/c
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { LocationPicker } from '@/features/listings/location-picker'
-import { formatPrice, propertyTypeLabels, transactionLabels } from '@/lib/format'
+import { formatPrice, transactionLabels } from '@/lib/format'
 import { createClient } from '@/lib/supabase/client'
 import { listingSchema, type ListingFormValues } from './listing-schema'
 import { registerListingImages, saveListingDraft, submitListingForReview } from '@/app/publish/actions'
@@ -24,15 +24,22 @@ const maxImages = 8
 const maxImageBytes = 8 * 1024 * 1024
 
 function LocalPhoto({ file, index, onRemove, onMoveUp, onMoveDown, isCover, isLast, locked }: { file: File; index: number; onRemove: () => void; onMoveUp: () => void; onMoveDown: () => void; isCover: boolean; isLast: boolean; locked: boolean }) {
-  const [url, setUrl] = useState('')
-  useEffect(() => {
+  const imgRef = useRef<HTMLImageElement>(null)
+  useLayoutEffect(() => {
+    const image = imgRef.current
+    if (!image) return
     const objectUrl = URL.createObjectURL(file)
-    setUrl(objectUrl)
-    return () => URL.revokeObjectURL(objectUrl)
+    image.src = objectUrl
+    return () => {
+      image.removeAttribute('src')
+      URL.revokeObjectURL(objectUrl)
+    }
   }, [file])
   return (
     <li className="overflow-hidden rounded-xl border border-line bg-white">
-      <div className="relative aspect-[1.35] bg-subtle">{url ? <img alt={`Снимка ${index + 1}: ${file.name}`} className="size-full object-cover" src={url} /> : null}<span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold text-ink">{isCover ? 'Основна снимка' : `Снимка ${index + 1}`}</span></div>
+      <div className="relative aspect-[1.35] bg-subtle">{/* Local blob preview: next/image needs a src prop and cannot accept a blob URL assigned via ref. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img alt={`Снимка ${index + 1}: ${file.name}`} className="size-full object-cover" ref={imgRef} /><span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold text-ink">{isCover ? 'Основна снимка' : `Снимка ${index + 1}`}</span></div>
       <div className="flex items-center justify-between gap-1 p-2"><span className="truncate text-xs text-muted-foreground">{file.name}</span><div className="flex shrink-0 gap-1"><button aria-label={`Премести снимка ${index + 1} нагоре`} className="rounded p-1 text-muted-foreground hover:bg-subtle disabled:opacity-40" disabled={locked || index === 0} onClick={onMoveUp} type="button">↑</button><button aria-label={`Премести снимка ${index + 1} надолу`} className="rounded p-1 text-muted-foreground hover:bg-subtle disabled:opacity-40" disabled={locked || isLast} onClick={onMoveDown} type="button">↓</button><button aria-label={`Премахни снимка ${index + 1}`} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" disabled={locked} onClick={onRemove} type="button"><Trash2 aria-hidden size={14} /></button></div></div>
     </li>
   )
