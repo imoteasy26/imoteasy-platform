@@ -28,6 +28,23 @@ Run this against an isolated Supabase test project after reviewing and applying 
 - [ ] Verify anonymous users cannot create/update/delete listings, reports, saved searches, notifications, price history, or private details.
 - [ ] Verify database triggers reject direct attempts to store precise public coordinates and only allow published-photo reads or owner/admin access.
 
+## Broker OS foundation (P1)
+
+Run only against an isolated Supabase test project after reviewing and applying both source migrations. Use separate, confirmed-email test users for each organization and role; do not use production data.
+
+- [ ] Create a broker workspace; verify the owner membership and a 30-day Professional trial start only after terms acceptance, with no payment method, price, auto-renewal, or charge.
+- [ ] Retry activation and create a second workspace with the same broker; verify the database rejects a second trial.
+- [ ] Verify plan entitlements and trial expiry gate listing management, CRM, tasks, viewings, and transaction updates server-side.
+- [ ] Invite a confirmed-email user with each permitted role; verify wrong-email, expired, reused, and malformed tokens are rejected and no invite can grant owner/platform-admin role.
+- [ ] As a second organization, attempt direct-ID reads and writes against the first organization’s memberships, leads, tasks, appointments, deals, usage, attribution, listing details, and images; verify RLS denies access.
+- [ ] Convert one marketplace inquiry to a CRM lead twice; verify one lead/contact reference, preserved original inquiry, correct organization, and an audit event.
+- [ ] Assign a lead to an active organization member; verify unauthorized assignments and non-member updates are denied and history is appended.
+- [ ] Create/update/complete tasks; verify assigned-user/admin controls and task history.
+- [ ] Schedule, confirm, reschedule, cancel, and complete a viewing; verify invalid cross-organization listing/lead references fail and outcome history is retained.
+- [ ] Move a transaction through the supported stages; verify timeline events and that only an authorized platform admin can mark a signed deal completed.
+- [ ] Submit attribution UTM/referrer values; verify the record is scoped to the listing organization and no fingerprint or unnecessary personal data is collected.
+- [ ] Create a shared agency listing, edit it from an authorized team member, and verify read-only, removed, or expired members cannot edit or read private listing details.
+
 ## Automated checks
 
 - [ ] `pnpm run typecheck`

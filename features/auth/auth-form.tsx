@@ -35,11 +35,13 @@ export function AuthForm({ mode, next = '/dashboard' }: { mode: 'sign-in' | 'sig
     setMessage('')
     const supabase = createClient()
     if (mode === 'sign-up') {
+      const confirmationUrl = new URL(process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`)
+      confirmationUrl.searchParams.set('next', destination)
       const { error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`,
+          emailRedirectTo: confirmationUrl.toString(),
           data: { display_name: values.displayName?.trim() ?? '' },
         },
       })
@@ -76,7 +78,7 @@ export function AuthForm({ mode, next = '/dashboard' }: { mode: 'sign-in' | 'sig
       </FieldGroup>
       {message ? <p aria-live="polite" className="rounded-xl bg-subtle px-4 py-3 text-sm leading-6 text-ink">{message}</p> : null}
       <Button className="min-h-12 w-full rounded-xl" disabled={isSubmitting} type="submit">{isSubmitting ? 'Момент…' : mode === 'sign-up' ? 'Създай профил' : 'Влез в профила'}</Button>
-      <p className="text-center text-sm text-muted-foreground">{mode === 'sign-up' ? 'Вече имаш профил?' : 'Нямаш профил?'}{' '}<Link className="font-semibold text-brand hover:underline" href={mode === 'sign-up' ? '/auth/sign-in' : '/auth/sign-up'}>{mode === 'sign-up' ? 'Вход' : 'Регистрация'}</Link></p>
+      <p className="text-center text-sm text-muted-foreground">{mode === 'sign-up' ? 'Вече имаш профил?' : 'Нямаш профил?'}{' '}<Link className="font-semibold text-brand hover:underline" href={`${mode === 'sign-up' ? '/auth/sign-in' : '/auth/sign-up'}?next=${encodeURIComponent(destination)}`}>{mode === 'sign-up' ? 'Вход' : 'Регистрация'}</Link></p>
     </form>
   )
 }

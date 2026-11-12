@@ -18,5 +18,6 @@ export type ListingFilters = {
   sort?: 'newest' | 'price_asc' | 'price_desc'
 }
 
+export type PublicListing = Omit<Listing, 'organization_id'>
 export type ListingImageWithUrl = ListingImage & { signed_url: string }
-export type ListingWithImages = Listing & { images: ListingImageWithUrl[] }
+export type ListingWithImages = PublicListing & { images: ListingImageWithUrl[] }
