@@ -1,11 +1,11 @@
 # Imoteasy Project Audit
 
-Audit date: 2026-11-11  
+Audit date: 2026-11-12
 Scope: repository, current Vercel project metadata, and read-only inspection of the Supabase project identified by the app's Development URL. The hardening migration is committed as source only; no database migration, environment setting, deployment, or user data was changed.
 
 ## Executive summary
 
-Imoteasy is a Next.js 16 marketplace with Supabase-backed listings, accounts, favorites, inquiries, reports, and moderation. This branch adds bounded public search, approximate public map coordinates, signed listing-image URLs, password recovery, saved-search and notification UI, price history, SEO routes, and focused unit tests. A reviewed migration is required before its private-storage/coordinate and new persistence features are active. **Do not treat the live app as privacy-hardened or launch-ready until the migration is reviewed, applied to an isolated test project first, and its authorization flows are verified.** No demo listings were added; the app-matched database currently has no published listing rows.
+Imoteasy is a Next.js 16 marketplace with Supabase-backed listings, accounts, favorites, inquiries, reports, and moderation. This branch preserves those flows and adds marketplace hardening plus an initial broker-operations foundation: agency workspaces and invitations, explicit no-card trials, configurable entitlements, CRM lead conversion and assignment, tasks, viewing schedules, a transaction pipeline, attribution, and shared agency listings. The P0 and P1 migrations are source-only and must be reviewed and tested on an isolated Supabase project before their features are enabled. **P0 privacy risks remain until its migration is applied and verified; P1 acceptance is not complete until tenant/RLS flows pass against a migrated test database.** No demo listings were added; the app-matched database currently has no published listing rows.
 
 ## Runtime and data-source identity
 
@@ -26,11 +26,17 @@ Imoteasy is a Next.js 16 marketplace with Supabase-backed listings, accounts, fa
 | Favorites, inquiries, reports | EXISTING; REGRESSION CHECK NEEDED | Existing Supabase-backed actions and pages are preserved. Browser testing did not create inquiries or mutate account data. |
 | Owner dashboard/account | EXISTING; REGRESSION CHECK NEEDED | Existing owner-scoped profile/listing flows remain. Exact-location editor is gated when the new private-coordinate schema is unavailable. |
 | Admin moderation | EXISTING; REGRESSION CHECK NEEDED | Existing admin routes/actions remain; the migration consolidates related RLS policies. Verify with an authorized admin/test project before rollout. |
+| Organizations and invitations | IMPLEMENTED IN CODE; MIGRATION REQUIRED | Additive P1 migration includes organizations, role-scoped memberships, hashed one-time invite tokens, confirmed-email acceptance, and organization event history. No database authorization test has been run. |
+| Broker onboarding and trial | IMPLEMENTED IN CODE; MIGRATION REQUIRED | Activation explicitly records terms, the 30-day Professional trial, and per-broker usage counters. No card, price, billing, or auto-renew flow exists. Database entitlement enforcement still needs isolated-target tests. |
+| CRM, tasks, viewings, and pipeline | IMPLEMENTED IN CODE; MIGRATION REQUIRED | Inquiry conversion references the canonical inquiry and is idempotent; lead/task/viewing/deal events are modeled. Availability editing, reminders, and full contact management remain partial/future work. |
+| Agency workspace and shared listings | IMPLEMENTED IN CODE; MIGRATION REQUIRED | Team, dashboard, pipeline, and shared-inventory routes are present; organization membership and plan entitlements guard listing/media access in the P1 migration. Multi-tenant RLS remains unverified. |
+| Attribution | IMPLEMENTED IN CODE; MIGRATION REQUIRED | Inquiry UTM/referrer context is stored through a consent-scoped RPC; no fingerprinting or external marketing action is used. Broader source-to-closed-deal attribution remains future work. |
+| AI marketing, investor intelligence, seller rewards | ARCHITECTURE ONLY | Planning documents exist; generation, financial scoring, reward calculations, and payouts are not implemented or activated. |
 | Saved searches | IMPLEMENTED IN CODE; MIGRATION REQUIRED | Save action, deduplication, owner management, enable/disable/delete, and criteria-to-results links are implemented. UI reports that the migration is required when the table is absent. |
 | Matching alerts / notifications | IMPLEMENTED IN CODE; MIGRATION REQUIRED | In-app inbox, unread counts, and listing/inquiry trigger functions are implemented. No email integration was added. |
 | Price history | IMPLEMENTED IN CODE; MIGRATION REQUIRED | The migration seeds a starting price for existing published listings and tracks future changes; the detail page renders changes and degrades with a migration notice. |
 | SEO | IMPLEMENTED | Canonical/Open Graph metadata, `robots.ts`, and a published-listing `sitemap.ts` are present. |
-| Automated tests | IMPLEMENTED | Six Vitest tests cover filter parsing, saved-search naming/links, and coordinate rounding/validation. No authenticated Supabase E2E test was run. |
+| Automated tests | PARTIAL | Nine Vitest tests cover filter parsing, saved-search naming/links, coordinate handling, and broker local-time parsing. No authenticated Supabase E2E or tenant/RLS isolation test was run. |
 | Images/performance | IMPLEMENTED IN CODE; MIGRATION REQUIRED | Next image optimization is enabled for Supabase Storage; signed URLs are generated server-side; bounded query payloads and page sizes reduce transfer work. Measure field performance after deployment; local vitals are lab data only. |
 
 ## Supabase schema, access, and operational findings
@@ -48,7 +54,7 @@ The app-matched database contains the marketplace tables `profiles`, `listings`,
 
 ## Migration contents and rollout
 
-The additive migration is intentionally not applied. It rounds public listing coordinates while retaining exact coordinates in owner/admin-only private details; changes listing-image storage from public to authenticated/published-signed access; tightens grants and consolidates RLS; and adds saved-search, notification, and price-history tables, policies, indexes, and triggers. Review its SQL before running it, especially alongside the repeated live migration history.
+Both additive migrations are intentionally not applied. P0 rounds public listing coordinates while retaining exact coordinates in private details; changes listing-image storage from public to private/signed access; tightens grants and consolidates RLS; and adds saved-search, notification, and price-history structures. P1 (`supabase/migrations/20261112000000_broker_os_foundation.sql`) adds organizations, roles/invitations, trial plans and usage, CRM, tasks, viewing appointments, transactions, attribution, and organization-scoped listing/image/private-detail policies. Review both migrations before running them, especially alongside the repeated live migration history.
 
 1. Verify the Development, Preview, and Production project refs using non-secret URL metadata. Keep the app matched to `aeezwzkngpwuoccjfrnl`; do not substitute `supabase-red-lamp`.
 2. Reconcile the migration-history duplication with the migration owner; do not edit Supabase's migration ledger directly.
@@ -60,9 +66,9 @@ The additive migration is intentionally not applied. It rounds public listing co
 
 - `pnpm install --frozen-lockfile`: PASS.
 - `pnpm run typecheck`: PASS.
-- `pnpm test`: PASS.
+- `pnpm test`: PASS — 9 tests across 3 suites.
 - `pnpm run build`: PASS after sourcing the existing local Development environment file for the build process; no environment values were printed or changed.
-- Browser smoke: homepage and a filtered search loaded. Save-search interaction correctly gated on sign-in without writing data. The empty search result is expected because the app-matched database has no published listings. Browser console contained only React development-tools/HMR informational messages, no application errors.
-- Responsive screenshots reviewed at 375×812 and 966×636.
+- Browser smoke: homepage, filtered search, public broker trial landing, and sign-up continuation to `/auth/sign-up?next=%2Fbroker%2Fonboarding` loaded. Save-search interaction correctly gated on sign-in without writing data. The empty search result is expected because the app-matched database has no published listings. Browser console/errors showed no application errors.
+- Responsive screenshots reviewed at 375×812 and 966×636, including the broker landing page.
 - Dev-preview lab vitals for `/imoti?city=София` at 966×636: TTFB 685.5 ms, FCP/LCP 728 ms (LCP element: heading), CLS 0.00, hydration 59.6 ms; INP was unavailable because no interaction was recorded. These are development-mode lab measurements, not production field data.
 - Authenticated owner/admin paths, email delivery, storage policies, direct table access, and database triggers remain unverified until exercised against an isolated migrated test project.

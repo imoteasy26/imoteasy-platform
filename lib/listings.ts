@@ -2,14 +2,13 @@ import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { approximateListingCoordinates } from '@/lib/geo'
 import { withSignedImageUrls } from '@/lib/listing-images'
-import type { Listing } from '@/lib/supabase/database.types'
-import type { ListingFilters, ListingWithImages } from '@/lib/listing-types'
+import type { ListingFilters, ListingWithImages, PublicListing } from '@/lib/listing-types'
 
 const publicListingColumns = 'id, owner_id, title, slug, description, property_type, transaction_type, city, neighborhood, price_eur, area_sqm, rooms, bedrooms, floor, total_floors, construction_type, condition, furnishing, latitude, longitude, status, created_at, updated_at, published_at'
 const pageSize = 12
 const maximumSearchPage = 100
 
-async function attachImages(listings: Listing[]) {
+async function attachImages(listings: PublicListing[]) {
   if (listings.length === 0) return [] as ListingWithImages[]
   const supabase = await createClient()
   const { data } = await supabase

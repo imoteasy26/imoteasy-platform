@@ -17,7 +17,7 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(`/dashboard/obavi/${id}`)}`)
 
   const [{ data: listing }, { data: images }, { data: privateDetails, error: privateDetailsError }] = await Promise.all([
-    supabase.from('listings').select('*').eq('id', id).eq('owner_id', user.id).maybeSingle(),
+    supabase.from('listings').select('*').eq('id', id).maybeSingle(),
     supabase.from('listing_images').select('*').eq('listing_id', id).order('position', { ascending: true }),
     supabase.from('private_listing_details').select('exact_address, exact_latitude, exact_longitude').eq('listing_id', id).maybeSingle(),
   ])

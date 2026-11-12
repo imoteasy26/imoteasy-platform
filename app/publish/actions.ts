@@ -6,6 +6,7 @@ import { listingSchema } from '@/features/listings/listing-schema'
 import { approximateCoordinate } from '@/lib/geo'
 import { withSignedImageUrls } from '@/lib/listing-images'
 import { createClient } from '@/lib/supabase/server'
+import { getBrokerAccess } from '@/lib/broker-workspace'
 
 const listingIdSchema = z.string().uuid()
 const imagePathsSchema = z.array(z.string().min(1).max(512)).min(1).max(8)
@@ -44,14 +45,36 @@ function createSlug(title: string) {
   return `${prefix}-${globalThis.crypto.randomUUID().slice(0, 8)}`
 }
 
-export async function saveListingDraft(existingId: string | null, input: unknown) {
+type ServerSupabaseClient = Awaited<ReturnType<typeof createClient>>
+
+async function canManageListing(supabase: ServerSupabaseClient, userId: string, listingId: string) {
+  const { data: listing, error } = await supabase.from('listings').select('id, owner_id').eq('id', listingId).maybeSingle()
+  if (error || !listing) return false
+  if (listing.owner_id === userId) return true
+
+  const { data: organizationRow, error: organizationError } = await supabase.from('listings')
+    .select('organization_id').eq('id', listingId).maybeSingle()
+  if (organizationError || !organizationRow?.organization_id) return false
+  const access = await getBrokerAccess(supabase, userId, organizationRow.organization_id)
+  return access.kind === 'ready' && ['owner', 'agency_admin', 'broker'].includes(access.context.membership.role)
+}
+
+export async function saveListingDraft(existingId: string | null, input: unknown, organizationId?: string) {
   const parsed = listingSchema.safeParse(input)
   const safeId = existingId === null ? null : listingIdSchema.safeParse(existingId)
-  if (!parsed.success || (existingId !== null && !safeId?.success)) return { success: false as const, message: 'Провери данните и опитай отново.' }
+  const safeOrganizationId = organizationId ? listingIdSchema.safeParse(organizationId) : null
+  if (!parsed.success || (existingId !== null && !safeId?.success) || (organizationId && !safeOrganizationId?.success)) return { success: false as const, message: 'Провери данните и опитай отново.' }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false as const, message: 'Влез в профила си, за да запазиш обява.' }
+
+  if (safeOrganizationId?.success) {
+    const access = await getBrokerAccess(supabase, user.id, safeOrganizationId.data)
+    if (access.kind !== 'ready' || !['owner', 'agency_admin', 'broker'].includes(access.context.membership.role)) {
+      return { success: false as const, message: 'Нямаш активен достъп до това брокерско работно място.' }
+    }
+  }
 
   const values = parsed.data
   const hasExactCoordinates = values.latitude !== undefined || values.longitude !== undefined
@@ -69,10 +92,16 @@ export async function saveListingDraft(existingId: string | null, input: unknown
   let slug: string
 
   if (existingId && safeId?.success) {
+    if (!await canManageListing(supabase, user.id, safeId.data)) return { success: false as const, message: 'Нямаш достъп до тази обява.' }
+    if (safeOrganizationId?.success) {
+      const { data: existingListing, error: organizationError } = await supabase.from('listings').select('organization_id').eq('id', safeId.data).maybeSingle()
+      if (organizationError || existingListing?.organization_id !== safeOrganizationId.data) {
+        return { success: false as const, message: 'Черновата не принадлежи на избраната агенция.' }
+      }
+    }
     const { data: listing, error } = await supabase.from('listings')
       .update(listingValues)
       .eq('id', safeId.data)
-      .eq('owner_id', user.id)
       .eq('status', 'draft')
       .select('id, slug')
       .maybeSingle()
@@ -83,6 +112,7 @@ export async function saveListingDraft(existingId: string | null, input: unknown
     const { data: listing, error } = await supabase.from('listings').insert({
       ...listingValues,
       owner_id: user.id,
+      ...(safeOrganizationId?.success ? { organization_id: safeOrganizationId.data } : {}),
       slug: createSlug(values.title),
       status: 'draft',
     }).select('id, slug').single()
@@ -116,8 +146,8 @@ export async function registerListingImages(listingId: string, input: unknown) {
   if (!user) return { success: false as const, message: 'Влез в профила си, за да качваш снимки.' }
 
   const { data: listing } = await supabase.from('listings').select('id, title, slug')
-    .eq('id', safeId.data).eq('owner_id', user.id).maybeSingle()
-  if (!listing) return { success: false as const, message: 'Обявата не е намерена.' }
+    .eq('id', safeId.data).maybeSingle()
+  if (!listing || !await canManageListing(supabase, user.id, listing.id)) return { success: false as const, message: 'Обявата не е намерена или нямаш достъп до нея.' }
 
   const prefix = `${user.id}/${listing.id}/`
   const names = parsedPaths.data.map((path) => path.startsWith(prefix) ? path.slice(prefix.length) : '')
@@ -169,15 +199,15 @@ export async function submitListingForReview(listingId: string) {
   if (!user) return { success: false as const, message: 'Влез в профила си, за да изпратиш обява.' }
 
   const { data: listing } = await supabase.from('listings').select('id, slug, status')
-    .eq('id', safeId.data).eq('owner_id', user.id).maybeSingle()
-  if (!listing || !['draft', 'rejected'].includes(listing.status)) {
+    .eq('id', safeId.data).maybeSingle()
+  if (!listing || !await canManageListing(supabase, user.id, listing.id) || !['draft', 'rejected'].includes(listing.status)) {
     return { success: false as const, message: 'Обявата не е намерена или не може да бъде изпратена за преглед.' }
   }
   const { data: image } = await supabase.from('listing_images').select('id').eq('listing_id', listing.id).limit(1).maybeSingle()
   if (!image) return { success: false as const, message: 'Добави поне една снимка, преди да изпратиш обявата.' }
 
   const { data: updated, error } = await supabase.from('listings').update({ status: 'pending_review' })
-    .eq('id', listing.id).eq('owner_id', user.id).eq('status', listing.status).select('id').maybeSingle()
+    .eq('id', listing.id).eq('status', listing.status).select('id').maybeSingle()
   if (error || !updated) return { success: false as const, message: 'Обявата е запазена като чернова, но не успяхме да я изпратим за преглед.' }
 
   revalidatePath('/dashboard')
@@ -195,10 +225,10 @@ export async function deleteListingImage(listingId: string, imageId: string) {
   if (!user) return { success: false as const, message: 'Влез в профила си, за да редактираш снимки.' }
 
   const { data: listing } = await supabase.from('listings').select('id, slug')
-    .eq('id', safeListingId.data).eq('owner_id', user.id).maybeSingle()
+    .eq('id', safeListingId.data).maybeSingle()
   const { data: image } = await supabase.from('listing_images').select('id, storage_path, is_cover')
     .eq('id', safeImageId.data).eq('listing_id', safeListingId.data).maybeSingle()
-  if (!listing || !image || !image.storage_path.startsWith(`${user.id}/${listing.id}/`)) {
+  if (!listing || !image || !await canManageListing(supabase, user.id, listing.id)) {
     return { success: false as const, message: 'Снимката не е намерена.' }
   }
 

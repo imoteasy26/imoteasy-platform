@@ -38,7 +38,7 @@ function LocalPhoto({ file, index, onRemove, onMoveUp, onMoveDown, isCover, isLa
   )
 }
 
-export function PublishWizard() {
+export function PublishWizard({ organizationId }: { organizationId?: string }) {
   const [step, setStep] = useState(0)
   const [photos, setPhotos] = useState<File[]>([])
   const [draftId, setDraftId] = useState<string | null>(null)
@@ -90,7 +90,7 @@ export function PublishWizard() {
       return
     }
 
-    const savedDraft = await saveListingDraft(draftId, values)
+    const savedDraft = await saveListingDraft(draftId, values, organizationId)
     if (!savedDraft.success) {
       setFormMessage(savedDraft.message)
       return
