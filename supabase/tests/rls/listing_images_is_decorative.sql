@@ -309,16 +309,95 @@ select pg_temp.check(
   'authenticated role with a forged service_role claim updated a foreign image'
 );
 
--- A real SET ROLE service_role may update the row.
+-- A real SET ROLE service_role may update the row and call the DEFINER helpers.
 set local role service_role;
 update public.listing_images
 set alt_text = 'Служебен път'
 where id = '00000000-0000-4000-8000-000000000011';
+select pg_temp.check(
+  private.listing_status_for_alt_enforcement('00000000-0000-4000-8000-0000000000f1') = 'draft',
+  'SET ROLE service_role could not call the status helper'
+);
 reset role;
 select pg_temp.check(
   (select alt_text from public.listing_images where id = '00000000-0000-4000-8000-000000000011') = 'Служебен път',
   'SET ROLE service_role could not update listing images'
 );
+
+-- authenticated cannot spoof current_setting('role') — PostgreSQL checks membership.
+do $spoof$
+begin
+  execute 'set local session authorization authenticated';
+  begin
+    perform set_config('role', 'service_role', true);
+    raise exception 'RLS_TEST_FAILED: authenticated was allowed to set_config role to service_role';
+  exception
+    when others then
+      if sqlerrm like 'RLS_TEST_FAILED:%' then raise; end if;
+      if sqlstate is distinct from '42501' then raise; end if;
+  end;
+  perform pg_temp.check(
+    current_setting('role', true) is distinct from 'service_role',
+    'failed set_config left role set to service_role'
+  );
+  execute 'reset session authorization';
+end;
+$spoof$;
+
+-- postgres with no JWT claim and role=none may use the helpers.
+select set_config('request.jwt.claim.sub', '', true),
+       set_config('request.jwt.claim.role', '', true),
+       set_config('request.jwt.claims', '{}', true);
+set local session authorization postgres;
+select pg_temp.check(
+  current_setting('role', true) = 'none'
+  and session_user = 'postgres'
+  and auth.uid() is null,
+  'postgres session was not role=none without a claim'
+);
+select pg_temp.check(
+  private.listing_status_for_alt_enforcement('00000000-0000-4000-8000-0000000000f1') = 'draft',
+  'postgres without a claim could not call the status helper'
+);
+select pg_temp.check(
+  private.listing_images_missing_accessible_alt('00000000-0000-4000-8000-0000000000f1') is not null,
+  'postgres without a claim could not call the missing-alt helper'
+);
+reset session authorization;
+
+-- An outsider calling the DEFINER helpers directly is denied before any lock.
+select pg_temp.login('00000000-0000-4000-8000-0000000000b3');
+do $outsider_helper$
+begin
+  begin
+    perform private.listing_status_for_alt_enforcement('00000000-0000-4000-8000-0000000000f1');
+    raise exception 'RLS_TEST_FAILED: outsider status helper call did not raise';
+  exception
+    when others then
+      if sqlerrm like 'RLS_TEST_FAILED:%' then raise; end if;
+      if sqlstate is distinct from '42501' then raise; end if;
+  end;
+  begin
+    perform private.listing_images_missing_accessible_alt('00000000-0000-4000-8000-0000000000f1');
+    raise exception 'RLS_TEST_FAILED: outsider missing-alt helper call did not raise';
+  exception
+    when others then
+      if sqlerrm like 'RLS_TEST_FAILED:%' then raise; end if;
+      if sqlstate is distinct from '42501' then raise; end if;
+  end;
+  perform pg_temp.check(
+    not exists (
+      select 1 from pg_locks
+      where pid = pg_backend_pid()
+        and relation = 'public.listings'::regclass
+        and locktype = 'tuple'
+        and granted
+    ),
+    'outsider helper call left a tuple lock on listings'
+  );
+end;
+$outsider_helper$;
+
 select pg_temp.login('00000000-0000-4000-8000-0000000000b1');
 
 update public.listing_images

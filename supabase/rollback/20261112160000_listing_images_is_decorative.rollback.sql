@@ -55,6 +55,7 @@ using (exists (
 drop function if exists private.enforce_listing_image_accessible_alt();
 drop function if exists private.listing_images_missing_accessible_alt(uuid);
 drop function if exists private.listing_status_for_alt_enforcement(uuid);
+drop function if exists private.listing_alt_caller_is_privileged();
 drop function if exists private.can_manage_listing(uuid);
 drop function if exists private.listing_alt_text_has_visible_content(text);
 drop function if exists private.listing_alt_invisible_chars();

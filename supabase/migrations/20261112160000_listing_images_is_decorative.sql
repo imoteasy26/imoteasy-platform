@@ -20,13 +20,17 @@
 -- depends only on the input and that fixed list, the helper is genuinely
 -- IMMUTABLE.
 --
--- The trigger itself is SECURITY INVOKER so current_user is the caller's real
--- role. Privileged reads (ownership that mirrors listing_images RLS, and the
--- parent status lock) live in SECURITY DEFINER helpers. The service_role
--- bypass uses current_user, not auth.role() or a JWT claim, so a forged
--- request.jwt.claim.role cannot skip the check. A DEFINER trigger would make
--- current_user the function owner (postgres) and would pass the bypass for
--- everyone.
+-- The trigger itself is SECURITY INVOKER. Privileged reads (ownership that
+-- mirrors listing_images RLS, and the parent status lock) live in SECURITY
+-- DEFINER helpers. Inside those helpers current_user is the function owner,
+-- so the privileged-role check reads current_setting('role', true) instead.
+-- That GUC is the caller's SET ROLE (under PostgREST, authenticated or
+-- service_role, while session_user is authenticator). It cannot be spoofed
+-- with set_config('role', ...) because PostgreSQL checks role membership,
+-- the same as SET ROLE. Do not use auth.role() or a JWT claim. The caller
+-- is privileged only when the GUC is service_role, or when it is none and
+-- session_user is postgres or supabase_admin. Every other caller must pass
+-- can_manage_listing, and the helpers raise 42501 before taking any lock.
 --
 -- Production listing_images is empty, so there is no backfill and no need
 -- for NOT VALID. The column default is false (unchecked in the UI).
@@ -115,8 +119,28 @@ $$;
 revoke all on function private.can_manage_listing(uuid) from public, anon;
 grant execute on function private.can_manage_listing(uuid) to authenticated, service_role;
 
+-- Caller's SET ROLE, not current_user (which is the DEFINER owner) and not
+-- a JWT claim. set_config('role', ...) and SET ROLE both check membership.
+create or replace function private.listing_alt_caller_is_privileged()
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select
+    current_setting('role', true) = 'service_role'
+    or (
+      current_setting('role', true) = 'none'
+      and session_user in ('postgres', 'supabase_admin')
+    )
+$$;
+
+revoke all on function private.listing_alt_caller_is_privileged() from public, anon;
+grant execute on function private.listing_alt_caller_is_privileged() to authenticated, service_role;
+
 -- Privileged parent-row lock and status read, so the invoker trigger does
--- not depend on the caller's UPDATE rights on listings.
+-- not depend on the caller's UPDATE rights on listings. The access check
+-- runs before FOR NO KEY UPDATE so a denied caller never holds the lock.
 create or replace function private.listing_status_for_alt_enforcement(p_listing_id uuid)
 returns text
 language plpgsql
@@ -127,6 +151,12 @@ as $$
 declare
   listing_status text;
 begin
+  if not private.listing_alt_caller_is_privileged()
+     and not private.can_manage_listing(p_listing_id) then
+    raise exception 'listing_image_access_denied'
+      using errcode = '42501';
+  end if;
+
   select listing.status
   into listing_status
   from public.listings as listing
@@ -142,17 +172,25 @@ grant execute on function private.listing_status_for_alt_enforcement(uuid) to au
 -- Privileged scan of images belonging to a listing whose status is changing.
 create or replace function private.listing_images_missing_accessible_alt(p_listing_id uuid)
 returns boolean
-language sql
+language plpgsql
 stable
 security definer
 set search_path = ''
 as $$
-  select exists (
+begin
+  if not private.listing_alt_caller_is_privileged()
+     and not private.can_manage_listing(p_listing_id) then
+    raise exception 'listing_image_access_denied'
+      using errcode = '42501';
+  end if;
+
+  return exists (
     select 1
     from public.listing_images as image
     where image.listing_id = p_listing_id
       and not (image.is_decorative or private.listing_alt_text_has_visible_content(image.alt_text))
   );
+end;
 $$;
 
 revoke all on function private.listing_images_missing_accessible_alt(uuid) from public, anon;
@@ -183,9 +221,11 @@ begin
     return new;
   end if;
 
-  -- current_user is the real session role because this function is
-  -- SECURITY INVOKER. Do not use auth.role() or the JWT claim here.
-  if current_user is distinct from 'service_role' then
+  -- Same privileged-role rule as the DEFINER helpers: the role GUC, not
+  -- auth.role() or a JWT claim. current_user also works here because this
+  -- trigger is SECURITY INVOKER, but the shared helper keeps both paths
+  -- consistent, including postgres/supabase_admin with role=none.
+  if not private.listing_alt_caller_is_privileged() then
     if not private.can_manage_listing(new.listing_id) then
       raise exception 'listing_image_access_denied'
         using errcode = '42501';
