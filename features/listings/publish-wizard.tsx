@@ -12,9 +12,12 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { LocationPicker } from '@/features/listings/location-picker'
 import { formatPrice, transactionLabels } from '@/lib/format'
+import { LISTING_ALT_TEXT_MAX_LENGTH, wizardPhotosNeedAltMessage } from '@/lib/listing-alt-text'
 import { createClient } from '@/lib/supabase/client'
 import { listingSchema, type ListingFormValues } from './listing-schema'
 import { registerListingImages, saveListingDraft, submitListingForReview } from '@/app/publish/actions'
+
+type WizardPhoto = { id: string; file: File; altText: string; isDecorative: boolean }
 
 const stepFields: (keyof ListingFormValues)[][] = [
   ['title', 'description', 'property_type', 'transaction_type', 'price_eur', 'area_sqm'],
@@ -23,31 +26,43 @@ const stepFields: (keyof ListingFormValues)[][] = [
 const maxImages = 8
 const maxImageBytes = 8 * 1024 * 1024
 
-function LocalPhoto({ file, index, onRemove, onMoveUp, onMoveDown, isCover, isLast, locked }: { file: File; index: number; onRemove: () => void; onMoveUp: () => void; onMoveDown: () => void; isCover: boolean; isLast: boolean; locked: boolean }) {
+function LocalPhoto({ photo, index, onAltChange, onDecorativeChange, onRemove, onMoveUp, onMoveDown, isCover, isLast, locked }: { photo: WizardPhoto; index: number; onAltChange: (value: string) => void; onDecorativeChange: (value: boolean) => void; onRemove: () => void; onMoveUp: () => void; onMoveDown: () => void; isCover: boolean; isLast: boolean; locked: boolean }) {
   const imgRef = useRef<HTMLImageElement>(null)
   useLayoutEffect(() => {
     const image = imgRef.current
     if (!image) return
-    const objectUrl = URL.createObjectURL(file)
+    const objectUrl = URL.createObjectURL(photo.file)
     image.src = objectUrl
     return () => {
       image.removeAttribute('src')
       URL.revokeObjectURL(objectUrl)
     }
-  }, [file])
+  }, [photo.file])
+  const previewAlt = photo.isDecorative ? '' : (photo.altText.trim() || `Снимка ${index + 1}: ${photo.file.name}`)
   return (
     <li className="overflow-hidden rounded-xl border border-line bg-white">
       <div className="relative aspect-[1.35] bg-subtle">{/* Local blob preview: next/image needs a src prop and cannot accept a blob URL assigned via ref. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt={`Снимка ${index + 1}: ${file.name}`} className="size-full object-cover" ref={imgRef} /><span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold text-ink">{isCover ? 'Основна снимка' : `Снимка ${index + 1}`}</span></div>
-      <div className="flex items-center justify-between gap-1 p-2"><span className="truncate text-xs text-muted-foreground">{file.name}</span><div className="flex shrink-0 gap-1"><button aria-label={`Премести снимка ${index + 1} нагоре`} className="rounded p-1 text-muted-foreground hover:bg-subtle disabled:opacity-40" disabled={locked || index === 0} onClick={onMoveUp} type="button">↑</button><button aria-label={`Премести снимка ${index + 1} надолу`} className="rounded p-1 text-muted-foreground hover:bg-subtle disabled:opacity-40" disabled={locked || isLast} onClick={onMoveDown} type="button">↓</button><button aria-label={`Премахни снимка ${index + 1}`} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" disabled={locked} onClick={onRemove} type="button"><Trash2 aria-hidden size={14} /></button></div></div>
+        <img alt={previewAlt} className="size-full object-cover" ref={imgRef} /><span className="absolute left-2 top-2 rounded-md bg-white/95 px-2 py-1 text-[10px] font-bold text-ink">{isCover ? 'Основна снимка' : `Снимка ${index + 1}`}</span></div>
+      <div className="flex flex-col gap-2 p-2">
+        <div className="flex items-center justify-between gap-1"><span className="truncate text-xs text-muted-foreground">{photo.file.name}</span><div className="flex shrink-0 gap-1"><button aria-label={`Премести снимка ${index + 1} нагоре`} className="rounded p-1 text-muted-foreground hover:bg-subtle disabled:opacity-40" disabled={locked || index === 0} onClick={onMoveUp} type="button">↑</button><button aria-label={`Премести снимка ${index + 1} надолу`} className="rounded p-1 text-muted-foreground hover:bg-subtle disabled:opacity-40" disabled={locked || isLast} onClick={onMoveDown} type="button">↓</button><button aria-label={`Премахни снимка ${index + 1}`} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" disabled={locked} onClick={onRemove} type="button"><Trash2 aria-hidden size={14} /></button></div></div>
+        <label className="flex items-start gap-2 text-sm leading-5 text-ink" htmlFor={`publish-image-decorative-${photo.id}`}>
+          <input checked={photo.isDecorative} className="mt-0.5 size-4 accent-[var(--brand)]" disabled={locked} id={`publish-image-decorative-${photo.id}`} onChange={(event) => onDecorativeChange(event.target.checked)} type="checkbox" />
+          <span>Декоративна снимка</span>
+        </label>
+        <Field>
+          <FieldLabel htmlFor={`publish-image-alt-${photo.id}`}>Алтернативен текст</FieldLabel>
+          <Input disabled={locked || photo.isDecorative} id={`publish-image-alt-${photo.id}`} maxLength={LISTING_ALT_TEXT_MAX_LENGTH} onChange={(event) => onAltChange(event.target.value)} value={photo.isDecorative ? '' : photo.altText} />
+          <FieldDescription>{photo.isDecorative ? 'Декоративната снимка няма алтернативен текст.' : `${photo.altText.length} от ${LISTING_ALT_TEXT_MAX_LENGTH} символа`}</FieldDescription>
+        </Field>
+      </div>
     </li>
   )
 }
 
 export function PublishWizard({ organizationId }: { organizationId?: string }) {
   const [step, setStep] = useState(0)
-  const [photos, setPhotos] = useState<File[]>([])
+  const [photos, setPhotos] = useState<WizardPhoto[]>([])
   const [draftId, setDraftId] = useState<string | null>(null)
   const [photosSaved, setPhotosSaved] = useState(false)
   const [formMessage, setFormMessage] = useState('')
@@ -65,6 +80,13 @@ export function PublishWizard({ organizationId }: { organizationId?: string }) {
     if (step === 2 && photos.length === 0) {
       setFormMessage('Добави поне една снимка, за да изпратиш обявата.')
       return
+    }
+    if (step === 2) {
+      const altMessage = wizardPhotosNeedAltMessage(photos)
+      if (altMessage) {
+        setFormMessage(altMessage)
+        return
+      }
     }
     setStep((current) => Math.min(current + 1, 3))
   }
@@ -86,7 +108,7 @@ export function PublishWizard({ organizationId }: { organizationId?: string }) {
       return
     }
     setFormMessage('')
-    setPhotos((current) => [...current, ...selected])
+    setPhotos((current) => [...current, ...selected.map((file) => ({ id: crypto.randomUUID(), file, altText: '', isDecorative: false }))])
   }
 
   async function submit(values: ListingFormValues) {
@@ -94,6 +116,12 @@ export function PublishWizard({ organizationId }: { organizationId?: string }) {
     if (photos.length === 0) {
       setStep(2)
       setFormMessage('Добави поне една снимка, за да изпратиш обявата.')
+      return
+    }
+    const altMessage = wizardPhotosNeedAltMessage(photos)
+    if (altMessage) {
+      setStep(2)
+      setFormMessage(altMessage)
       return
     }
 
@@ -114,10 +142,10 @@ export function PublishWizard({ organizationId }: { organizationId?: string }) {
       }
 
       const uploadedPaths: string[] = []
-      for (const file of photos) {
-        const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
+      for (const photo of photos) {
+        const extension = photo.file.type === 'image/png' ? 'png' : photo.file.type === 'image/webp' ? 'webp' : 'jpg'
         const path = `${user.id}/${currentDraftId}/${crypto.randomUUID()}.${extension}`
-        const { error } = await supabase.storage.from('imoteasy-listings').upload(path, file, { contentType: file.type, upsert: false })
+        const { error } = await supabase.storage.from('imoteasy-listings').upload(path, photo.file, { contentType: photo.file.type, upsert: false })
         if (error) {
           if (uploadedPaths.length) await supabase.storage.from('imoteasy-listings').remove(uploadedPaths)
           setFormMessage('Не успяхме да качим снимките. Черновата е запазена; опитай отново.')
@@ -126,7 +154,11 @@ export function PublishWizard({ organizationId }: { organizationId?: string }) {
         uploadedPaths.push(path)
       }
 
-      const imageResult = await registerListingImages(currentDraftId, uploadedPaths)
+      const imageResult = await registerListingImages(currentDraftId, uploadedPaths.map((storage_path, index) => ({
+        storage_path,
+        alt_text: photos[index].isDecorative ? '' : photos[index].altText,
+        is_decorative: photos[index].isDecorative,
+      })))
       if (!imageResult.success) {
         await supabase.storage.from('imoteasy-listings').remove(uploadedPaths)
         setFormMessage(imageResult.message)
@@ -172,7 +204,7 @@ export function PublishWizard({ organizationId }: { organizationId?: string }) {
           <Field className="md:col-span-2"><FieldLabel htmlFor="exact_address">Точен адрес <span className="font-normal text-muted-foreground">(личен, по избор)</span></FieldLabel><Input autoComplete="street-address" id="exact_address" maxLength={500} placeholder="Улица и номер" {...form.register('exact_address')} /><FieldDescription>Съхранява се отделно и се вижда само от теб и администратор.</FieldDescription></Field>
           <div className="md:col-span-2"><LocationPicker onPick={([lat, lng]) => { form.setValue('latitude', lat, { shouldValidate: true }); form.setValue('longitude', lng, { shouldValidate: true }) }} point={point} />{form.formState.errors.latitude ? <p className="mt-2 text-sm text-destructive">{form.formState.errors.latitude.message}</p> : null}</div>
         </FieldGroup></div> : null}
-        {step === 2 ? <div><h2 className="text-2xl font-semibold tracking-tight text-ink">Снимки</h2><p className="mb-6 mt-2 text-sm text-muted-foreground">Добави до {maxImages} снимки. Първата е основна. JPG, PNG или WebP до 8 MB всяка.{photosSaved ? ' Снимките вече са качени за тази чернова.' : ''}</p><label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-brand/40 bg-brand/[0.035] p-6 text-center transition hover:bg-brand/[0.07]"><ImagePlus aria-hidden className="text-brand" size={28} /><span className="mt-3 font-semibold text-ink">Избери снимки от устройството</span><span className="mt-1 text-xs text-muted-foreground">{photos.length} от {maxImages} избрани</span><input accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={photosSaved} multiple onChange={(event) => { addPhotos(event.currentTarget.files); event.currentTarget.value = '' }} type="file" /></label>{photos.length ? <ul aria-label="Избрани снимки" className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{photos.map((file, index) => <LocalPhoto file={file} index={index} isCover={index === 0} isLast={index === photos.length - 1} key={`${file.name}-${file.lastModified}-${index}`} locked={photosSaved} onMoveDown={() => setPhotos((items) => { if (index >= items.length - 1) return items; const next = [...items]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next })} onMoveUp={() => setPhotos((items) => { if (index <= 0) return items; const next = [...items]; [next[index], next[index - 1]] = [next[index - 1], next[index]]; return next })} onRemove={() => setPhotos((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}</ul> : null}</div> : null}
+        {step === 2 ? <div><h2 className="text-2xl font-semibold tracking-tight text-ink">Снимки</h2><p className="mb-6 mt-2 text-sm text-muted-foreground">Добави до {maxImages} снимки. Първата е основна. JPG, PNG или WebP до 8 MB всяка. Всяка недекоративна снимка трябва да има алтернативен текст.{photosSaved ? ' Снимките вече са качени за тази чернова.' : ''}</p><label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-brand/40 bg-brand/[0.035] p-6 text-center transition hover:bg-brand/[0.07]"><ImagePlus aria-hidden className="text-brand" size={28} /><span className="mt-3 font-semibold text-ink">Избери снимки от устройството</span><span className="mt-1 text-xs text-muted-foreground">{photos.length} от {maxImages} избрани</span><input accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={photosSaved} multiple onChange={(event) => { addPhotos(event.currentTarget.files); event.currentTarget.value = '' }} type="file" /></label>{photos.length ? <ul aria-label="Избрани снимки" className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{photos.map((photo, index) => <LocalPhoto index={index} isCover={index === 0} isLast={index === photos.length - 1} key={photo.id} locked={photosSaved} onAltChange={(value) => setPhotos((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, altText: value } : item))} onDecorativeChange={(value) => setPhotos((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, isDecorative: value, altText: value ? '' : item.altText } : item))} onMoveDown={() => setPhotos((items) => { if (index >= items.length - 1) return items; const next = [...items]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next })} onMoveUp={() => setPhotos((items) => { if (index <= 0) return items; const next = [...items]; [next[index], next[index - 1]] = [next[index - 1], next[index]]; return next })} onRemove={() => setPhotos((items) => items.filter((_, itemIndex) => itemIndex !== index))} photo={photo} />)}</ul> : null}</div> : null}
         {step === 3 ? <div><h2 className="text-2xl font-semibold tracking-tight text-ink">Провери преди изпращане</h2><p className="mb-6 mt-2 text-sm text-muted-foreground">Обявата ще се появи публично след одобрение.</p><div className="grid gap-3 rounded-2xl bg-paper p-5 sm:grid-cols-2"><div><p className="text-xs text-muted-foreground">Заглавие</p><p className="mt-1 font-semibold text-ink">{values.title || '—'}</p></div><div><p className="text-xs text-muted-foreground">Тип и сделка</p><p className="mt-1 font-semibold text-ink">{values.property_type ? propertyNames[values.property_type] : '—'} · {values.transaction_type ? transactionLabels[values.transaction_type] : '—'}</p></div><div><p className="text-xs text-muted-foreground">Локация</p><p className="mt-1 font-semibold text-ink">{[values.neighborhood, values.city].filter(Boolean).join(', ') || '—'}</p></div><div><p className="text-xs text-muted-foreground">Цена и площ</p><p className="mt-1 font-semibold text-ink">{values.price_eur ? formatPrice(Number(values.price_eur)) : '—'} · {values.area_sqm ? `${values.area_sqm} м²` : '—'}</p></div><div className="sm:col-span-2"><p className="text-xs text-muted-foreground">Снимки</p><p className="mt-1 font-semibold text-ink">{photos.length} {photos.length === 1 ? 'снимка' : 'снимки'}</p></div></div><p className="mt-4 rounded-xl border border-line p-4 text-sm leading-6 text-muted-foreground">Обявата се изпраща като „За одобрение“. Точният адрес остава личен и не се показва на публичната страница.</p></div> : null}
         {formMessage ? <p aria-live="polite" className="mt-5 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{formMessage}</p> : null}
         <div className="mt-8 flex flex-col-reverse justify-between gap-3 border-t border-line pt-5 sm:flex-row">{step > 0 ? <Button onClick={() => { setFormMessage(''); setStep((current) => current - 1) }} type="button" variant="outline"><ArrowLeft data-icon="inline-start" />Назад</Button> : <span />}{step < 3 ? <Button className="sm:min-w-40" onClick={nextStep} type="button">Продължи<ArrowRight data-icon="inline-end" /></Button> : <Button className="sm:min-w-52" disabled={form.formState.isSubmitting} type="submit">{form.formState.isSubmitting ? 'Изпращане…' : 'Изпрати за преглед'}{!form.formState.isSubmitting ? <Check data-icon="inline-end" /> : null}</Button>}</div>
