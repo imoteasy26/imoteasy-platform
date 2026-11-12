@@ -27,6 +27,9 @@ export function BrokerStateNotice({ state }: { state?: string }) {
     migration: 'Необходимата P1 миграция още не е налична в тази среда.',
     forbidden: 'Нямаш необходимите права за тази промяна.',
     invalid: 'Провери въведените данни и опитай отново.',
+    left: 'Напусна екипа.',
+    removed: 'Членът беше премахнат от екипа.',
+    last_owner: 'Последният собственик не може да напусне организацията.',
     error: 'Промяната не беше запазена. Опитай отново.',
   }
   const message = state ? messages[state] : undefined

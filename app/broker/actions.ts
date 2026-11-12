@@ -342,3 +342,51 @@ export async function transitionBrokerTransaction(formData: FormData) {
   revalidatePath('/broker/pipeline')
   redirect(organizationPath('/broker/pipeline', parsed.data.organization_id, 'updated'))
 }
+
+export async function leaveOrganization(formData: FormData) {
+  const parsed = z.object({ organization_id: z.string().uuid() }).safeParse(Object.fromEntries(formData))
+  if (!parsed.success) redirect('/broker/team?state=invalid')
+  const { supabase, user } = await requireUser()
+  const access = await getBrokerAccess(supabase, user.id, parsed.data.organization_id)
+  if (access.kind === 'migration_required') redirect(organizationPath('/broker/team', parsed.data.organization_id, 'migration'))
+  if (access.kind !== 'ready') redirect(organizationPath('/broker/team', parsed.data.organization_id, 'forbidden'))
+
+  const { error } = await supabase.rpc('leave_organization', { p_organization_id: parsed.data.organization_id })
+  if (error) {
+    const message = error.message ?? ''
+    if (message.includes('last_owner_required')) redirect(organizationPath('/broker/team', parsed.data.organization_id, 'last_owner'))
+    redirectForBrokerError('/broker/team', error, parsed.data.organization_id)
+  }
+  revalidatePath('/broker')
+  revalidatePath('/broker/team')
+  redirect('/broker?state=left')
+}
+
+export async function removeOrganizationMember(formData: FormData) {
+  const parsed = z.object({
+    organization_id: z.string().uuid(),
+    user_id: z.string().uuid(),
+  }).safeParse(Object.fromEntries(formData))
+  if (!parsed.success) redirect('/broker/team?state=invalid')
+  const { supabase, user } = await requireUser()
+  const access = await getBrokerAccess(supabase, user.id, parsed.data.organization_id)
+  if (access.kind === 'migration_required') redirect(organizationPath('/broker/team', parsed.data.organization_id, 'migration'))
+  if (access.kind !== 'ready' || !['owner', 'agency_admin'].includes(access.context.membership.role)) {
+    redirect(organizationPath('/broker/team', parsed.data.organization_id, 'forbidden'))
+  }
+  if (parsed.data.user_id === user.id) redirect(organizationPath('/broker/team', parsed.data.organization_id, 'invalid'))
+
+  const { error } = await supabase.rpc('remove_organization_member', {
+    p_organization_id: parsed.data.organization_id,
+    p_user_id: parsed.data.user_id,
+  })
+  if (error) {
+    const message = error.message ?? ''
+    if (message.includes('last_owner_required')) redirect(organizationPath('/broker/team', parsed.data.organization_id, 'last_owner'))
+    if (message.includes('owner_required_to_remove_owner')) redirect(organizationPath('/broker/team', parsed.data.organization_id, 'forbidden'))
+    redirectForBrokerError('/broker/team', error, parsed.data.organization_id)
+  }
+  revalidatePath('/broker')
+  revalidatePath('/broker/team')
+  redirect(organizationPath('/broker/team', parsed.data.organization_id, 'removed'))
+}
