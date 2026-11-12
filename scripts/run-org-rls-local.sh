@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Apply Imoteasy migrations on a disposable local Postgres, verify the new
-# migrations twice, run isolation, accessible-alt, concurrent-leave, and
-# concurrent mutual-remove tests, roll them back in reverse order, re-apply,
-# and re-test. Never points at a remote database.
+# migrations twice, run isolation, accessible-alt, image/status concurrency,
+# concurrent-leave, and concurrent mutual-remove tests, roll them back in
+# reverse order, re-apply, and re-test. Never points at a remote database.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -34,6 +34,18 @@ dropdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" --if-exists "$DB"
 createdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" "$DB"
 
 run() { "${psql[@]}" -d "$DB" "$@"; }
+
+
+run_image_status_repeats() {
+  local label="$1"
+  local runs="${IMAGE_STATUS_RUNS:-5}"
+  local i
+  echo "== concurrent image-then-status updates (${label}, ${runs} runs) =="
+  for i in $(seq 1 "$runs"); do
+    echo "  image-status ${label} run ${i}/${runs}"
+    "$ROOT/supabase/tests/rls/listing_images_status_concurrency.sh"
+  done
+}
 
 run_mutual_remove_repeats() {
   local label="$1"
@@ -76,6 +88,8 @@ run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
 echo "== accessible-alt test (1) =="
 run -f "$ROOT/supabase/tests/rls/listing_images_is_decorative.sql"
 
+run_image_status_repeats "before rollback"
+
 echo "== concurrent two-owner leave (1) =="
 "$ROOT/supabase/tests/rls/organizations_concurrent_leave.sh"
 
@@ -98,6 +112,8 @@ run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
 
 echo "== accessible-alt test (2) =="
 run -f "$ROOT/supabase/tests/rls/listing_images_is_decorative.sql"
+
+run_image_status_repeats "after re-apply"
 
 echo "== concurrent two-owner leave (2) =="
 "$ROOT/supabase/tests/rls/organizations_concurrent_leave.sh"

@@ -33,6 +33,9 @@ done
 psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/organizations_isolation.sql
 psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/listing_images_is_decorative.sql
 
+# Two sessions update different images then the listing status; no 40P01.
+./supabase/tests/rls/listing_images_status_concurrency.sh
+
 # Two parallel sessions: one of two concurrent owner leaves must fail.
 ./supabase/tests/rls/organizations_concurrent_leave.sh
 
@@ -47,8 +50,9 @@ psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/listing_images_is_decorative.sql
 `20261112160000_listing_images_is_decorative.sql` a second time
 (idempotency), rolls them back in reverse order (160000, then 150000,
 then 140000, then 130000), re-applies all four, and re-runs the isolation,
-accessible-alt, concurrent-leave, and concurrent mutual-remove tests
-(the mutual-remove script is repeated). The 140000 and 150000 rollbacks
+accessible-alt, image/status concurrency, concurrent-leave, and
+concurrent mutual-remove tests (the image/status and mutual-remove
+scripts are repeated). The 140000 and 150000 rollbacks
 are documented no-ops: they keep the NULL-safe invitation function and
 the `is distinct from` lead-assignment check instead of restoring those
 holes.

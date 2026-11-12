@@ -3,12 +3,13 @@
 -- Manual, reviewed use only (never part of the migration chain). Run with
 -- `psql -v ON_ERROR_STOP=1 --single-transaction -f <this file>`.
 --
--- Drops the accessible-alt triggers, the enforcement function, and the
+-- Drops the accessible-alt triggers, the enforcement functions, and the
 -- is_decorative column. Does not touch listing_images.alt_text or earlier
 -- migrations.
 
 drop trigger if exists listing_images_enforce_accessible_alt on public.listing_images;
 drop trigger if exists listings_enforce_accessible_alt on public.listings;
 drop function if exists private.enforce_listing_image_accessible_alt();
+drop function if exists private.listing_alt_text_has_visible_content(text);
 
 alter table public.listing_images drop column if exists is_decorative;

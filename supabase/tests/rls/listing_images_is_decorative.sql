@@ -87,6 +87,23 @@ select pg_temp.check(
   'accessible-alt triggers are missing'
 );
 
+select pg_temp.check(
+  current_setting('standard_conforming_strings') = 'on',
+  'standard_conforming_strings is not on'
+);
+
+select pg_temp.check(
+  private.listing_alt_text_has_visible_content('Кухня')
+  and private.listing_alt_text_has_visible_content(chr(8203) || 'Кухня' || chr(160))
+  and not private.listing_alt_text_has_visible_content(chr(9))
+  and not private.listing_alt_text_has_visible_content(chr(10))
+  and not private.listing_alt_text_has_visible_content(chr(160))
+  and not private.listing_alt_text_has_visible_content(chr(8203))
+  and not private.listing_alt_text_has_visible_content(chr(65279))
+  and not private.listing_alt_text_has_visible_content(chr(9) || chr(10) || chr(160) || chr(8203) || chr(65279)),
+  'visible-content helper does not match the documented character set'
+);
+
 insert into auth.users (id, email, aud, role, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data)
 values
   (
@@ -108,6 +125,16 @@ values
     now(),
     '{}'::jsonb,
     jsonb_build_object('display_name', 'Admin')
+  ),
+  (
+    '00000000-0000-4000-8000-0000000000b3',
+    'outsider-decorative@example.invalid',
+    'authenticated',
+    'authenticated',
+    '',
+    now(),
+    '{}'::jsonb,
+    jsonb_build_object('display_name', 'Outsider')
   );
 
 -- Bypass guard_profile_role only for this fixture.
@@ -171,8 +198,96 @@ select pg_temp.expect_error(
   'whitespace-only alt was treated as present'
 );
 
+select pg_temp.login('00000000-0000-4000-8000-0000000000b3');
+select pg_temp.expect_error(
+  $sql$
+    update public.listing_images
+    set alt_text = 'Чужд текст'
+    where id = '00000000-0000-4000-8000-000000000011'
+  $sql$,
+  'listing_image_access_denied',
+  'outsider could update another owner''s image and learn review state'
+);
+
+select set_config('request.jwt.claim.sub', '', true),
+       set_config('request.jwt.claim.role', 'service_role', true),
+       set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
 update public.listing_images
-set alt_text = 'Дневна с тераса'
+set alt_text = 'Служебен път'
+where id = '00000000-0000-4000-8000-000000000011';
+select pg_temp.check(
+  (select alt_text from public.listing_images where id = '00000000-0000-4000-8000-000000000011') = 'Служебен път',
+  'service-role path could not update listing images'
+);
+select pg_temp.login('00000000-0000-4000-8000-0000000000b1');
+
+update public.listing_images
+set alt_text = chr(9)
+where id = '00000000-0000-4000-8000-000000000011';
+select pg_temp.expect_error(
+  $sql$
+    update public.listings
+    set status = 'pending_review'
+    where id = '00000000-0000-4000-8000-0000000000f1'
+  $sql$,
+  'listing_image_alt_required',
+  'TAB-only alt was treated as present'
+);
+
+update public.listing_images
+set alt_text = chr(10)
+where id = '00000000-0000-4000-8000-000000000011';
+select pg_temp.expect_error(
+  $sql$
+    update public.listings
+    set status = 'pending_review'
+    where id = '00000000-0000-4000-8000-0000000000f1'
+  $sql$,
+  'listing_image_alt_required',
+  'newline-only alt was treated as present'
+);
+
+update public.listing_images
+set alt_text = chr(160)
+where id = '00000000-0000-4000-8000-000000000011';
+select pg_temp.expect_error(
+  $sql$
+    update public.listings
+    set status = 'pending_review'
+    where id = '00000000-0000-4000-8000-0000000000f1'
+  $sql$,
+  'listing_image_alt_required',
+  'NBSP-only alt was treated as present'
+);
+
+update public.listing_images
+set alt_text = chr(8203)
+where id = '00000000-0000-4000-8000-000000000011';
+select pg_temp.expect_error(
+  $sql$
+    update public.listings
+    set status = 'pending_review'
+    where id = '00000000-0000-4000-8000-0000000000f1'
+  $sql$,
+  'listing_image_alt_required',
+  'ZWSP-only alt was treated as present'
+);
+
+update public.listing_images
+set alt_text = chr(65279)
+where id = '00000000-0000-4000-8000-000000000011';
+select pg_temp.expect_error(
+  $sql$
+    update public.listings
+    set status = 'pending_review'
+    where id = '00000000-0000-4000-8000-0000000000f1'
+  $sql$,
+  'listing_image_alt_required',
+  'BOM-only alt was treated as present'
+);
+
+update public.listing_images
+set alt_text = chr(8203) || 'Дневна с тераса' || chr(160)
 where id = '00000000-0000-4000-8000-000000000011';
 
 update public.listings
