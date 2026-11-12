@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply Imoteasy migrations on a disposable local Postgres, verify both new
+# Apply Imoteasy migrations on a disposable local Postgres, verify the new
 # migrations twice, run isolation and concurrent-leave tests, roll them back
 # in reverse order, re-apply, and re-test. Never points at a remote database.
 set -euo pipefail
@@ -45,13 +45,15 @@ done
 
 HARDENING="$ROOT/supabase/migrations/20261112130000_organization_rls_hardening.sql"
 INVITE_FIX="$ROOT/supabase/migrations/20261112140000_fix_invitation_inviter_role_null.sql"
+FOLLOWUPS="$ROOT/supabase/migrations/20261112150000_org_rls_followups.sql"
 
 echo "== pre-apply check (expected 0 on an empty database) =="
 run -c "select count(*) as listing_images_alt_text_over_200 from public.listing_images where char_length(alt_text) > 200;"
 
-echo "== second apply of both new migrations (idempotency) =="
+echo "== second apply of the new migrations (idempotency) =="
 run -f "$HARDENING"
 run -f "$INVITE_FIX"
+run -f "$FOLLOWUPS"
 
 echo "== isolation test (1) =="
 run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
@@ -59,13 +61,15 @@ run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"
 echo "== concurrent two-owner leave (1) =="
 "$ROOT/supabase/tests/rls/organizations_concurrent_leave.sh"
 
-echo "== rollback new migrations (140000 then 130000) =="
+echo "== rollback new migrations (150000, then 140000, then 130000) =="
+run --single-transaction -f "$ROOT/supabase/rollback/20261112150000_org_rls_followups.rollback.sql"
 run --single-transaction -f "$ROOT/supabase/rollback/20261112140000_fix_invitation_inviter_role_null.rollback.sql"
 run --single-transaction -f "$ROOT/supabase/rollback/20261112130000_organization_rls_hardening.rollback.sql"
 
-echo "== re-apply both new migrations after rollback =="
+echo "== re-apply the new migrations after rollback =="
 run -f "$HARDENING"
 run -f "$INVITE_FIX"
+run -f "$FOLLOWUPS"
 
 echo "== isolation test (2) =="
 run -f "$ROOT/supabase/tests/rls/organizations_isolation.sql"

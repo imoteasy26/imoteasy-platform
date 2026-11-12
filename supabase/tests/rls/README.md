@@ -37,10 +37,14 @@ psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/organizations_isolation.sql
 ```
 
 `scripts/run-org-rls-local.sh` does the same, then applies
-`20261112130000_organization_rls_hardening.sql` and
-`20261112140000_fix_invitation_inviter_role_null.sql` a second time
-(idempotency), rolls them back in reverse order (140000 then 130000),
-re-applies both, and re-runs the isolation and concurrent-leave tests.
+`20261112130000_organization_rls_hardening.sql`,
+`20261112140000_fix_invitation_inviter_role_null.sql`, and
+`20261112150000_org_rls_followups.sql` a second time (idempotency),
+rolls them back in reverse order (150000, then 140000, then 130000),
+re-applies all three, and re-runs the isolation and concurrent-leave tests.
+The 140000 and 150000 rollbacks are documented no-ops: they keep the
+NULL-safe invitation function and the `is distinct from` lead-assignment
+check instead of restoring those holes.
 
 `local_harness.sql` stubs the `anon` / `authenticated` / `service_role` roles,
 `auth.uid()` / `auth.users`, and a minimal `storage.buckets` / `storage.objects`
