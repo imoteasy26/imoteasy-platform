@@ -24,13 +24,23 @@ for f in supabase/migrations/*.sql; do
   psql -v ON_ERROR_STOP=1 -f "$f"
 done
 
+# Pre-apply check before validating listing_images_alt_text_length:
+#   select count(*) from public.listing_images where char_length(alt_text) > 200;
+# Then, in a separate step (not in the migration):
+#   alter table public.listing_images validate constraint listing_images_alt_text_length;
+
 # The isolation test always rolls back its fixtures.
 psql -v ON_ERROR_STOP=1 -f supabase/tests/rls/organizations_isolation.sql
+
+# Two parallel sessions: one of two concurrent owner leaves must fail.
+./supabase/tests/rls/organizations_concurrent_leave.sh
 ```
 
 `scripts/run-org-rls-local.sh` does the same, then applies
-`20261112130000_organization_rls_hardening.sql` a second time (idempotency),
-runs the rollback, re-applies the hardening migration, and re-runs the test.
+`20261112130000_organization_rls_hardening.sql` and
+`20261112140000_fix_invitation_inviter_role_null.sql` a second time
+(idempotency), rolls them back in reverse order (140000 then 130000),
+re-applies both, and re-runs the isolation and concurrent-leave tests.
 
 `local_harness.sql` stubs the `anon` / `authenticated` / `service_role` roles,
 `auth.uid()` / `auth.users`, and a minimal `storage.buckets` / `storage.objects`

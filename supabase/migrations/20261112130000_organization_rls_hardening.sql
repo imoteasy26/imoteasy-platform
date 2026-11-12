@@ -15,10 +15,14 @@ begin;
 -- ---------------------------------------------------------------------------
 -- last-active-owner guard
 -- ---------------------------------------------------------------------------
--- An organization must keep at least one *active* owner while the organization
--- and the owner's profile still exist. Cascading account deletion (the profile
--- is already gone) is allowed so a GDPR erasure is never blocked. Membership
--- primary-key columns are immutable.
+-- An organization must keep at least one *active* owner. The organization row
+-- is locked first so two concurrent leaves cannot both see a remaining owner
+-- and both succeed. Membership primary-key columns are immutable.
+--
+-- User deletion is *not* handled here: organization_memberships.user_id and
+-- organizations.created_by are ON DELETE RESTRICT, so deleting a profile or
+-- auth user is already rejected by the FKs. A follow-up deletion function is
+-- required (transfer the last owner or close the org, then anonymize created_by).
 
 create or replace function private.guard_last_org_owner()
 returns trigger
@@ -27,6 +31,11 @@ security definer
 set search_path = ''
 as $$
 begin
+  perform 1
+  from public.organizations as organization
+  where organization.id = old.organization_id
+  for update;
+
   if tg_op = 'UPDATE'
      and (new.organization_id is distinct from old.organization_id
           or new.user_id is distinct from old.user_id) then
@@ -142,7 +151,7 @@ begin
   where organization_id = p_organization_id
     and user_id = actor_id
     and status = 'active';
-  if actor_role not in ('owner', 'agency_admin') then
+  if actor_role is null or actor_role not in ('owner', 'agency_admin') then
     raise exception 'organization_admin_required';
   end if;
 
@@ -205,9 +214,13 @@ begin
     where conname = 'listing_images_alt_text_length'
       and conrelid = 'public.listing_images'::regclass
   ) then
+    -- Pre-apply in the target environment:
+    --   select count(*) from public.listing_images where char_length(alt_text) > 200;
+    -- Added NOT VALID so existing long values cannot block apply. Validate later:
+    --   alter table public.listing_images validate constraint listing_images_alt_text_length;
     alter table public.listing_images
       add constraint listing_images_alt_text_length
-      check (char_length(alt_text) <= 200);
+      check (char_length(alt_text) <= 200) not valid;
   end if;
 end;
 $$;

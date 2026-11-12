@@ -3,7 +3,8 @@
 -- Run only against a disposable local database after:
 --   1. supabase/tests/rls/local_harness.sql
 --   2. every file in supabase/migrations/ in name order, including
---      20261112130000_organization_rls_hardening.sql
+--      20261112130000_organization_rls_hardening.sql and
+--      20261112140000_fix_invitation_inviter_role_null.sql
 -- The transaction always rolls back its synthetic fixtures. A failed
 -- assertion raises `RLS_TEST_FAILED: ...`.
 --
@@ -27,8 +28,24 @@ begin
 end;
 $$;
 
+create function pg_temp.expect_error(p_sql text, p_match text, p_message text)
+returns void
+language plpgsql
+as $$
+begin
+  execute p_sql;
+  perform pg_temp.check(false, p_message);
+exception
+  when others then
+    if sqlerrm not like '%' || p_match || '%' then
+      raise;
+    end if;
+end;
+$$;
+
 grant execute on function pg_temp.login(uuid) to authenticated;
 grant execute on function pg_temp.check(boolean, text) to authenticated;
+grant execute on function pg_temp.expect_error(text, text, text) to authenticated;
 
 -- Users: org1 owner, agency_admin, broker, assistant, marketing, read_only;
 -- org2 owner; an outsider who sends an inquiry.
@@ -41,6 +58,7 @@ from (values
   ('00000000-0000-4000-8000-0000000000a4', 'org1-assistant@example.invalid'),
   ('00000000-0000-4000-8000-0000000000a5', 'org1-marketing@example.invalid'),
   ('00000000-0000-4000-8000-0000000000a6', 'org1-readonly@example.invalid'),
+  ('00000000-0000-4000-8000-0000000000a7', 'org1-owner-two@example.invalid'),
   ('00000000-0000-4000-8000-0000000000c1', 'org2-owner@example.invalid'),
   ('00000000-0000-4000-8000-0000000000d1', 'buyer@example.invalid')
 ) as u(id, email);
@@ -288,6 +306,198 @@ begin
         raise;
       end if;
   end;
+end;
+$$;
+
+-- Isolation attacks that must fail after the NULL-role and last-owner fixes.
+
+-- Outsider and a member of another organization cannot remove a member.
+select pg_temp.login('00000000-0000-4000-8000-0000000000d1');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.remove_organization_member(%L::uuid, %L::uuid)',
+      (select v from ids where k = 'org1'),
+      '00000000-0000-4000-8000-0000000000a3'
+    ),
+    'organization_admin_required',
+    'outsider removed a member'
+  );
+end;
+$$;
+
+select pg_temp.login('00000000-0000-4000-8000-0000000000c1');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.remove_organization_member(%L::uuid, %L::uuid)',
+      (select v from ids where k = 'org1'),
+      '00000000-0000-4000-8000-0000000000a3'
+    ),
+    'organization_admin_required',
+    'member of another org removed a member'
+  );
+end;
+$$;
+
+-- broker and read_only cannot remove a member.
+select pg_temp.login('00000000-0000-4000-8000-0000000000a3');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.remove_organization_member(%L::uuid, %L::uuid)',
+      (select v from ids where k = 'org1'),
+      '00000000-0000-4000-8000-0000000000a4'
+    ),
+    'organization_admin_required',
+    'broker removed a member'
+  );
+end;
+$$;
+
+select pg_temp.login('00000000-0000-4000-8000-0000000000a6');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.remove_organization_member(%L::uuid, %L::uuid)',
+      (select v from ids where k = 'org1'),
+      '00000000-0000-4000-8000-0000000000a4'
+    ),
+    'organization_admin_required',
+    'read_only removed a member'
+  );
+end;
+$$;
+
+-- Owner can remove another owner (not the last remaining one).
+reset role;
+insert into public.organization_memberships (organization_id, user_id, role, status)
+values (
+  (select v from ids where k = 'org1'),
+  '00000000-0000-4000-8000-0000000000a7',
+  'owner',
+  'active'
+);
+
+set local role authenticated;
+select pg_temp.login('00000000-0000-4000-8000-0000000000a1');
+select public.remove_organization_member(
+  (select v from ids where k = 'org1'),
+  '00000000-0000-4000-8000-0000000000a7'
+);
+select pg_temp.check(
+  (select status from public.organization_memberships
+    where organization_id = (select v from ids where k = 'org1')
+      and user_id = '00000000-0000-4000-8000-0000000000a7') = 'removed',
+  'owner could not remove another owner'
+);
+select pg_temp.check(
+  (select count(*) from public.organization_memberships
+    where organization_id = (select v from ids where k = 'org1')
+      and role = 'owner' and status = 'active') = 1,
+  'removing a second owner also removed the last owner'
+);
+
+-- Direct UPDATE by an authenticated session is denied (SELECT grant only).
+select pg_temp.login('00000000-0000-4000-8000-0000000000d1');
+do $$
+begin
+  begin
+    update public.organization_memberships
+      set role = 'broker'
+    where organization_id = (select v from ids where k = 'org1')
+      and user_id = '00000000-0000-4000-8000-0000000000a1'
+      and status = 'active';
+    perform pg_temp.check(false, 'outsider demoted an owner via UPDATE');
+  exception
+    when insufficient_privilege then null;
+    when others then
+      if sqlerrm not like '%permission denied%' and sqlstate <> '42501' then
+        raise;
+      end if;
+  end;
+end;
+$$;
+
+-- Table-owner demotion of the last active owner is blocked by the guard.
+reset role;
+do $$
+begin
+  begin
+    update public.organization_memberships
+      set role = 'broker'
+    where organization_id = (select v from ids where k = 'org1')
+      and user_id = '00000000-0000-4000-8000-0000000000a1'
+      and status = 'active';
+    perform pg_temp.check(false, 'last owner was demoted via UPDATE');
+  exception
+    when check_violation then null;
+    when others then
+      if sqlerrm not like '%last_owner_required%' then
+        raise;
+      end if;
+  end;
+end;
+$$;
+
+select pg_temp.check(
+  (select role from public.organization_memberships
+    where organization_id = (select v from ids where k = 'org1')
+      and user_id = '00000000-0000-4000-8000-0000000000a1'
+      and status = 'active') = 'owner',
+  'last owner role was changed by the blocked demotion'
+);
+
+-- Outsider cannot create (or accept) an agency_admin invitation for a foreign org.
+set local role authenticated;
+select pg_temp.login('00000000-0000-4000-8000-0000000000d1');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.create_organization_invitation(%L::uuid, %L, %L, %L)',
+      (select v from ids where k = 'org1'),
+      'buyer@example.invalid',
+      'agency_admin',
+      repeat('cd', 32)
+    ),
+    'organization_admin_required',
+    'outsider created an agency_admin invitation for a foreign org'
+  );
+end;
+$$;
+
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.accept_organization_invitation(%L)',
+      repeat('cd', 32)
+    ),
+    'invalid_invitation',
+    'outsider accepted a missing agency_admin invitation'
+  );
+end;
+$$;
+
+select pg_temp.login('00000000-0000-4000-8000-0000000000c1');
+do $$
+begin
+  perform pg_temp.expect_error(
+    format(
+      'select public.create_organization_invitation(%L::uuid, %L, %L, %L)',
+      (select v from ids where k = 'org1'),
+      'org2-owner@example.invalid',
+      'agency_admin',
+      repeat('ef', 32)
+    ),
+    'organization_admin_required',
+    'member of another org created an invitation'
+  );
 end;
 $$;
 
