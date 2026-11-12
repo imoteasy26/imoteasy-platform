@@ -131,7 +131,7 @@ export function ListingImageManager({ listingId, listingStatus, ownerId, initial
             const value = draftAlt[image.id] ?? image.alt_text
             const isDecorative = draftDecorative[image.id] ?? image.is_decorative
             const emptyRequired = listingAltTextIsRequired(listingStatus, isDecorative) && value.trim().length === 0
-            const previewAlt = isDecorative ? '' : (listingImageAltAttribute({ alt_text: image.alt_text, is_decorative: isDecorative }) || `Снимка ${index + 1}`)
+            const previewAlt = isDecorative ? listingImageAltAttribute({ alt_text: image.alt_text, is_decorative: true }) : (listingImageAltAttribute({ alt_text: image.alt_text, is_decorative: false }) || `Снимка ${index + 1}`)
             const isUnchanged = isDecorative === image.is_decorative && (isDecorative || value === image.alt_text)
             return (
               <li className="overflow-hidden rounded-xl border border-line" key={image.id}>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   LISTING_ALT_TEXT_MAX_LENGTH,
+  listingAltTextDuplicateKey,
   listingAltTextIsRequired,
   listingImageAltAttribute,
   normalizeListingAltText,
@@ -48,8 +49,20 @@ describe('listingImageAltAttribute', () => {
   it('returns the image alt text and never falls back to a title', () => {
     expect(listingImageAltAttribute({ alt_text: '  Кухня  ', is_decorative: false })).toBe('Кухня')
     expect(listingImageAltAttribute({ alt_text: '', is_decorative: false })).toBe('')
-    expect(listingImageAltAttribute({ alt_text: 'Кухня', is_decorative: true })).toBe('')
-    expect(listingImageAltAttribute(undefined)).toBe('')
+  })
+
+  it('returns an explicit empty string for decorative or missing images, never undefined', () => {
+    const decorative = listingImageAltAttribute({ alt_text: 'Кухня', is_decorative: true })
+    const emptyDecorative = listingImageAltAttribute({ alt_text: '', is_decorative: true })
+    const missing = listingImageAltAttribute(undefined)
+    const nullable = listingImageAltAttribute(null)
+    const missingText = listingImageAltAttribute({ alt_text: null, is_decorative: false })
+
+    for (const alt of [decorative, emptyDecorative, missing, nullable, missingText]) {
+      expect(alt).toBe('')
+      expect(alt).not.toBeUndefined()
+      expect(typeof alt).toBe('string')
+    }
   })
 })
 
@@ -72,6 +85,20 @@ describe('reviewListingImagesForPublication', () => {
     ])
     expect(review.missingAltImageIds).toEqual([])
     expect(review.duplicateAltTexts).toEqual(['Дневна с тераса'])
+  })
+
+  it('treats Cyrillic alts that differ only by case or surrounding space as duplicates', () => {
+    expect(listingAltTextDuplicateKey('Кухня')).toBe('кухня')
+    expect(listingAltTextDuplicateKey('кухня ')).toBe('кухня')
+    expect(listingAltTextDuplicateKey('  КУХНЯ')).toBe(listingAltTextDuplicateKey('Кухня'))
+
+    const review = reviewListingImagesForPublication([
+      { id: 'a', alt_text: 'Кухня', is_decorative: false },
+      { id: 'b', alt_text: 'кухня ', is_decorative: false },
+      { id: 'c', alt_text: 'Дневна', is_decorative: false },
+    ])
+    expect(review.missingAltImageIds).toEqual([])
+    expect(review.duplicateAltTexts).toEqual(['Кухня'])
   })
 
   it('does not treat empty decorative alts as duplicates', () => {

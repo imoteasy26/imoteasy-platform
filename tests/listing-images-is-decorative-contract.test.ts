@@ -60,4 +60,17 @@ describe('listing_images is_decorative migration contract', () => {
     expect(imageManager).toContain('type="checkbox"')
     expect(imageManager).toContain('is_decorative')
   })
+
+  it('renders listing images with an explicit alt attribute, empty for decorative images', () => {
+    for (const source of [listingCard, listingDetail, adminPage]) {
+      expect(source).toMatch(/alt=\{listingImageAltAttribute\(/)
+      expect(source).not.toMatch(/alt=\{undefined\}/)
+      expect(source).not.toMatch(/<Image(?![^>]*\balt=)/)
+    }
+    expect(imageManager).toMatch(/alt=\{previewAlt\}/)
+    expect(imageManager).toContain('isDecorative ? listingImageAltAttribute')
+    expect(imageManager).toContain('is_decorative: true')
+    expect(imageManager).not.toMatch(/alt=\{undefined\}/)
+    expect(imageManager).not.toMatch(/<Image(?![^>]*\balt=)/)
+  })
 })
